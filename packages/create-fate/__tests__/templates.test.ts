@@ -133,6 +133,7 @@ describe('create-fate templates', () => {
       'utf8',
     );
 
+    expect(clientPackageJson.dependencies).toHaveProperty('@nkzw/fate');
     expect(clientPackageJson.dependencies).toHaveProperty('cf-fate');
     expect(clientPackageJson.dependencies).toHaveProperty('@hono/node-server');
     expect(clientViteConfig).toContain("transport: 'cloudflare'");
