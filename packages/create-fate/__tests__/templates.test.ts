@@ -1,9 +1,12 @@
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { describe, expect, test } from 'vite-plus/test';
+import { promisify } from 'node:util';
+import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test';
 
+const execFileAsync = promisify(execFile);
 const packageRoot = dirname(import.meta.dirname);
 const builtinModules = new Set(['node:fs', 'node:path', 'node:url']);
 
@@ -37,6 +40,38 @@ const getViteConfigImports = (source: string): Array<string> =>
   ).filter((specifier) => !specifier.startsWith('.') && !builtinModules.has(specifier));
 
 describe('create-fate templates', () => {
+  const registryVersions = new Map([
+    ['@nkzw/fate', '1.2.3'],
+    ['react-fate', '2.3.4'],
+    ['void-fate', '3.4.5'],
+    ['vue-fate', '4.5.6'],
+  ]);
+  const registry = createServer((request, response) => {
+    const packageName = decodeURIComponent(request.url!.slice(1));
+    const version = registryVersions.get(packageName);
+    response.writeHead(version ? 200 : 404, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(version ? { 'dist-tags': { latest: version } } : {}));
+  });
+  let registryURL: string;
+
+  beforeAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      registry.once('error', reject);
+      registry.listen(0, '127.0.0.1', resolve);
+    });
+    const address = registry.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected the test registry to listen on a TCP port.');
+    }
+    registryURL = `http://127.0.0.1:${address.port}/`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      registry.close((error) => (error ? reject(error) : resolve()));
+    });
+  });
+
   test('do not resolve workspace-only source exports', () => {
     const viteConfigs = findViteConfigs(join(packageRoot, 'templates/fate')).filter(
       (configPath) => !configPath.includes('/_shared/'),
@@ -161,12 +196,12 @@ describe('create-fate templates', () => {
     ).toBe(false);
   });
 
-  test('generates Vue projects for every backend template', () => {
+  test('generates Vue projects for every backend template', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-vue-'));
     try {
       for (const templateName of templateNames()) {
         const target = join(tempRoot, templateName);
-        const result = spawnSync(
+        await execFileAsync(
           process.execPath,
           [
             join(packageRoot, 'bin/create-fate.mjs'),
@@ -180,10 +215,10 @@ describe('create-fate templates', () => {
           {
             cwd: tempRoot,
             encoding: 'utf8',
+            env: { ...process.env, npm_config_registry: registryURL },
+            timeout: 30_000,
           },
         );
-
-        expect.soft(result.status, result.stderr).toBe(0);
 
         const appRoot =
           templateName === 'void' || templateName === 'graphql-client'
@@ -220,7 +255,7 @@ describe('create-fate templates', () => {
         expect.soft(rootPackageJson.description, templateName).toContain('Vue');
         expect.soft(rootPackageJson.description, templateName).not.toContain('React');
         expect.soft(dependencies, templateName).toHaveProperty('vue');
-        expect.soft(dependencies, templateName).toHaveProperty('vue-fate');
+        expect.soft(dependencies['vue-fate'], templateName).toBe('^4.5.6');
         expect.soft(dependencies, templateName).toHaveProperty('@void/vue');
         expect.soft(dependencies, templateName).not.toHaveProperty('react');
         expect.soft(dependencies, templateName).not.toHaveProperty('react-dom');
@@ -234,6 +269,7 @@ describe('create-fate templates', () => {
           .soft(existsSync(join(appRoot, 'src/lib/LocaleContext.tsx')), templateName)
           .toBe(false);
         if (templateName === 'void') {
+          expect.soft(dependencies['void-fate'], templateName).toBe('^3.4.5');
           expect.soft(packageJson.scripts?.['dev:setup'], templateName).toContain('db:seed');
         }
         expect.soft(dependencies, templateName).not.toHaveProperty('@nkzw/fbtee-compiler');
@@ -291,7 +327,7 @@ describe('create-fate templates', () => {
         }
 
         if (templateName === 'graphql-client') {
-          expect.soft(packageJson.dependencies, templateName).toHaveProperty('@nkzw/fate');
+          expect.soft(dependencies['@nkzw/fate'], templateName).toBe('^1.2.3');
           expect.soft(packageJson.scripts, templateName).toHaveProperty('test:all');
           expect.soft(packageJson.engines, templateName).toHaveProperty('node');
           expect.soft(packageJson.packageManager, templateName).toBeTruthy();
@@ -328,27 +364,27 @@ describe('create-fate templates', () => {
     }
   }, 180_000);
 
-  test('uses React as the default UI framework', () => {
+  test('uses React as the default UI framework', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-default-'));
     try {
       const target = join(tempRoot, 'app');
-      const result = spawnSync(
+      await execFileAsync(
         process.execPath,
         [join(packageRoot, 'bin/create-fate.mjs'), target, '--template', 'http', '--no-setup'],
         {
           cwd: tempRoot,
           encoding: 'utf8',
+          env: { ...process.env, npm_config_registry: registryURL },
+          timeout: 30_000,
         },
       );
-
-      expect(result.status, result.stderr).toBe(0);
 
       const packageJson = JSON.parse(readFileSync(join(target, 'client/package.json'), 'utf8')) as {
         dependencies?: Record<string, string>;
       };
 
       expect(packageJson.dependencies).toHaveProperty('react');
-      expect(packageJson.dependencies).toHaveProperty('react-fate');
+      expect(packageJson.dependencies?.['react-fate']).toBe('^2.3.4');
       expect(packageJson.dependencies).not.toHaveProperty('vue');
       expect(packageJson.dependencies).not.toHaveProperty('vue-fate');
     } finally {
