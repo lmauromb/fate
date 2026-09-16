@@ -235,7 +235,7 @@ describe('create-fate templates', () => {
         if (templateName === 'void') {
           expect.soft(packageJson.scripts?.['dev:setup'], templateName).toContain('db:seed');
         }
-        expect.soft(dependencies, templateName).not.toHaveProperty('@nkzw/fbtee-cli');
+        expect.soft(dependencies, templateName).not.toHaveProperty('@nkzw/fbtee-compiler');
         expect.soft(dependencies, templateName).not.toHaveProperty('@nkzw/vite-plugin-fbtee');
         expect.soft(dependencies, templateName).not.toHaveProperty('oxc-transform-react');
         expect

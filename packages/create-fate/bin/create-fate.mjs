@@ -352,7 +352,7 @@ const removePackageEntries = (record, names) => {
 
 const reactPackageEntries = [
   '@nkzw/babel-preset-fbtee',
-  '@nkzw/fbtee-cli',
+  '@nkzw/fbtee-compiler',
   '@radix-ui/react-slot',
   '@nkzw/stack',
   '@nkzw/vite-plugin-fbtee',
