@@ -39,6 +39,7 @@ export default defineConfig({
     },
   },
   pack: {
+    deps: { resolveDepSubpath: true },
     entry: ['./src/app.tsx'],
     outputOptions: {
       codeSplitting: false,

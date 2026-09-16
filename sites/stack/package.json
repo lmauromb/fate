@@ -12,29 +12,29 @@
   "dependencies": {
     "@nkzw/stack": "^2.3.2",
     "@paper-design/shaders": "0.0.80",
-    "@void/react": "^0.10.12",
+    "@void/react": "^0.10.13",
     "clsx": "^2.1.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "tailwind-merge": "^3.6.0",
-    "void": "^0.10.12"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "void": "^0.10.13"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260904.1",
+    "@cloudflare/workers-types": "5.20260916.1",
     "@hono/node-server": "^2.1.1",
     "@nkzw/eslint-plugin": "^2.0.0",
     "@nkzw/oxlint-config": "^2.0.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.4.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "^6.1.0",
-    "oxc-transform-react": "^0.147.0",
+    "@types/node": "^26.6.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxc-transform-react": "^0.150.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "wrangler": "4.129.0"
+    "wrangler": "4.131.2"
   },
   "engines": {
     "node": ">=24.0.0"
