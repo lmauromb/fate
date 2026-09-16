@@ -28,5 +28,6 @@
   "readme": "none",
   "sidebar": {
     "pretty": true
-  }
+  },
+  "tsconfig": "packages/docs-toolchain/tsconfig.json"
 }
