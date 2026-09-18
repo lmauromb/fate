@@ -23,7 +23,7 @@
     "@nkzw/fate": "workspace:*",
     "@nkzw/stack": "^2.3.2",
     "@radix-ui/react-slot": "^1.3.3",
-    "@void/react": "^0.20.0",
+    "@void/react": "^0.20.1",
     "better-auth": "1.7.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -34,7 +34,7 @@
     "react-error-boundary": "^6.1.5",
     "react-fate": "workspace:*",
     "tailwind-merge": "^3.7.0",
-    "void": "^0.20.0",
+    "void": "^0.20.1",
     "void-fate": "workspace:*",
     "zod": "^4.6.5"
   },

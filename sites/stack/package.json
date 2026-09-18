@@ -12,12 +12,12 @@
   "dependencies": {
     "@nkzw/stack": "^2.3.2",
     "@paper-design/shaders": "0.0.80",
-    "@void/react": "^0.20.0",
+    "@void/react": "^0.20.1",
     "clsx": "^2.1.1",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwind-merge": "^3.7.0",
-    "void": "^0.20.0"
+    "void": "^0.20.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260917.1",
