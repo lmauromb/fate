@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test';
 
@@ -128,6 +129,47 @@ describe('create-fate templates', () => {
     expect(voidGitignore).toContain('.void/');
   });
 
+  test('applies the Void auth migrations without losing seeded data', () => {
+    const migrationsRoot = join(packageRoot, 'templates/fate/void/db/migrations');
+    const journal = JSON.parse(
+      readFileSync(join(migrationsRoot, 'meta/_journal.json'), 'utf8'),
+    ) as { entries: Array<{ tag: string }> };
+    const database = new DatabaseSync(':memory:', { enableDoubleQuotedStringLiterals: false });
+
+    try {
+      database.exec('PRAGMA foreign_keys = ON');
+      const data = () =>
+        ['user', 'account', 'Post', 'Comment'].map((table) =>
+          database.prepare(`SELECT id FROM "${table}" ORDER BY id`).all(),
+        );
+
+      for (const { tag } of journal.entries.slice(0, -1)) {
+        database.exec(readFileSync(join(migrationsRoot, `${tag}.sql`), 'utf8'));
+      }
+      const seededData = data();
+      for (const rows of seededData) {
+        expect(rows.length).toBeGreaterThan(0);
+      }
+
+      database.exec(
+        readFileSync(join(migrationsRoot, `${journal.entries.at(-1)!.tag}.sql`), 'utf8'),
+      );
+
+      expect(data()).toEqual(seededData);
+      expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(database.prepare('SELECT impersonatedBy FROM session').all()).toEqual([]);
+      expect(
+        database
+          .prepare(
+            'SELECT id, identifier, value, expiresAt, createdAt, updatedAt FROM verification',
+          )
+          .all(),
+      ).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
   test('ships a GraphQL client template for existing servers', () => {
     const templateRoot = join(packageRoot, 'templates/fate/graphql-client');
     const readme = readFileSync(join(templateRoot, 'README.md'), 'utf8');
@@ -141,59 +183,6 @@ describe('create-fate templates', () => {
     expect(fateManifest).toContain('export const Root');
     expect(fateManifest).toContain('export const fateGraphQL');
     expect(packageJson).not.toContain('@app/server');
-  });
-
-  test('ships a Cloudflare template with D1 and live SSE support', () => {
-    const templateRoot = join(packageRoot, 'templates/fate/cloudflare');
-    const clientPackageJson = JSON.parse(
-      readFileSync(join(templateRoot, 'client/package.json'), 'utf8'),
-    ) as {
-      dependencies?: Record<string, string>;
-    };
-    const clientViteConfig = readFileSync(join(templateRoot, 'client/vite.config.ts'), 'utf8');
-    const layout = readFileSync(join(templateRoot, 'client/pages/layout.tsx'), 'utf8');
-    const serverPackageJson = JSON.parse(
-      readFileSync(join(templateRoot, 'server/package.json'), 'utf8'),
-    ) as {
-      dependencies?: Record<string, string>;
-      scripts?: Record<string, string>;
-    };
-    const wranglerConfig = readFileSync(join(templateRoot, 'server/wrangler.jsonc'), 'utf8');
-    const workerEntry = readFileSync(join(templateRoot, 'server/src/index.ts'), 'utf8');
-    const router = readFileSync(join(templateRoot, 'server/src/router.ts'), 'utf8');
-    const gitignore = readFileSync(join(templateRoot, '_gitignore'), 'utf8');
-    const workspace = readFileSync(join(templateRoot, 'pnpm-workspace.yaml'), 'utf8');
-    const seedMigration = readFileSync(
-      join(templateRoot, 'server/db/migrations/20260508120500_seed_cloudflare_demo.sql'),
-      'utf8',
-    );
-
-    expect(clientPackageJson.dependencies).toHaveProperty('@nkzw/fate');
-    expect(clientPackageJson.dependencies).toHaveProperty('cf-fate');
-    expect(clientPackageJson.dependencies).toHaveProperty('@hono/node-server');
-    expect(clientViteConfig).toContain("transport: 'cloudflare'");
-    expect(clientViteConfig).toContain('server: { port: 6001 }');
-    expect(layout).toContain("liveUrl: `${env('SERVER_URL')}/fate-live`");
-    expect(serverPackageJson.dependencies).toHaveProperty('cf-fate');
-    expect(serverPackageJson.scripts).toHaveProperty('db:migrate');
-    expect(serverPackageJson.scripts).toHaveProperty('db:migrate:remote');
-    expect(wranglerConfig).toContain('"binding": "DB"');
-    expect(wranglerConfig).toContain('"name": "FATE_LIVE"');
-    expect(wranglerConfig).toContain('"migrations_dir": "db/migrations"');
-    expect(workerEntry).toContain('defineCloudflareFateRoute');
-    expect(workerEntry).toContain('defineCloudflareFateLiveRoute');
-    expect(router).toContain("export { fateServer } from './fate/server.ts'");
-    expect(gitignore).not.toContain('server/src/prisma');
-    expect(workspace).toContain('  better-sqlite3: true');
-    expect(workspace).toContain('  - better-sqlite3');
-    expect(seedMigration).toContain('Cloudflare');
-    expect(seedMigration).not.toContain('Void example');
-    expect(seedMigration).not.toContain('native HTTP');
-    expect(seedMigration).not.toContain('outside of Hono');
-    expect(existsSync(join(templateRoot, 'docker-compose.yml'))).toBe(false);
-    expect(
-      existsSync(join(templateRoot, 'server/db/migrations/20260508120500_seed_void_demo.sql')),
-    ).toBe(false);
   });
 
   test('generates Vue projects for every backend template', async () => {
@@ -335,60 +324,53 @@ describe('create-fate templates', () => {
             .soft(readFileSync(join(target, 'src/fate/graphql.ts'), 'utf8'), templateName)
             .toContain('fateGraphQL');
         }
-
-        if (templateName === 'cloudflare') {
-          const serverPackageJson = JSON.parse(
-            readFileSync(join(target, 'server/package.json'), 'utf8'),
-          ) as {
-            dependencies?: Record<string, string>;
-          };
-
-          expect.soft(packageJson.dependencies?.['cf-fate'], templateName).toBe('latest');
-          expect.soft(serverPackageJson.dependencies?.['cf-fate'], templateName).toBe('latest');
-          expect
-            .soft(
-              existsSync(join(target, 'server/db/migrations/20260508120500_seed_void_demo.sql')),
-            )
-            .toBe(false);
-          expect
-            .soft(
-              existsSync(
-                join(target, 'server/db/migrations/20260508120500_seed_cloudflare_demo.sql'),
-              ),
-            )
-            .toBe(true);
-        }
       }
     } finally {
       rmSync(tempRoot, { force: true, recursive: true });
     }
   }, 180_000);
 
-  test('uses React as the default UI framework', async () => {
-    const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-default-'));
-    try {
-      const target = join(tempRoot, 'app');
-      await execFileAsync(
-        process.execPath,
-        [join(packageRoot, 'bin/create-fate.mjs'), target, '--template', 'http', '--no-setup'],
-        {
-          cwd: tempRoot,
-          encoding: 'utf8',
-          env: { ...process.env, npm_config_registry: registryURL },
-          timeout: 30_000,
-        },
-      );
+  test.each(['http', 'void'])(
+    'uses React as the default UI framework for %s',
+    async (template) => {
+      const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-default-'));
+      try {
+        const target = join(tempRoot, 'app');
+        await execFileAsync(
+          process.execPath,
+          [
+            join(packageRoot, 'bin/create-fate.mjs'),
+            target,
+            ...(template === 'void' ? [] : ['--template', template]),
+            '--no-setup',
+          ],
+          {
+            cwd: tempRoot,
+            encoding: 'utf8',
+            env: { ...process.env, npm_config_registry: registryURL },
+            timeout: 30_000,
+          },
+        );
 
-      const packageJson = JSON.parse(readFileSync(join(target, 'client/package.json'), 'utf8')) as {
-        dependencies?: Record<string, string>;
-      };
+        const appRoot = template === 'void' ? target : join(target, 'client');
+        const packageJson = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) as {
+          dependencies?: Record<string, string>;
+        };
 
-      expect(packageJson.dependencies).toHaveProperty('react');
-      expect(packageJson.dependencies?.['react-fate']).toBe('^2.3.4');
-      expect(packageJson.dependencies).not.toHaveProperty('vue');
-      expect(packageJson.dependencies).not.toHaveProperty('vue-fate');
-    } finally {
-      rmSync(tempRoot, { force: true, recursive: true });
-    }
-  }, 30_000);
+        expect(packageJson.dependencies).toHaveProperty('react');
+        expect(packageJson.dependencies?.['react-fate']).toBe('^2.3.4');
+        expect(packageJson.dependencies).not.toHaveProperty('vue');
+        expect(packageJson.dependencies).not.toHaveProperty('vue-fate');
+        if (template === 'void') {
+          expect(packageJson.dependencies?.['void-fate']).toBe('^3.4.5');
+          expect(readFileSync(join(appRoot, 'vite.config.ts'), 'utf8')).toContain(
+            "transport: 'void'",
+          );
+        }
+      } finally {
+        rmSync(tempRoot, { force: true, recursive: true });
+      }
+    },
+    30_000,
+  );
 });

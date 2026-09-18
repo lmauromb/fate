@@ -54,6 +54,18 @@ Common commands from the project root:
 - `vp test` runs the test suite.
 - `vp run build` builds the app.
 
+## Cloudflare Deployment
+
+Deploy directly to your own Cloudflare account:
+
+```sh
+vp exec void deploy --platform cloudflare
+```
+
+Void signs you into Cloudflare when needed, provisions resources, applies the checked-in database migrations, and deploys the app. Commit the resource IDs saved in `wrangler.jsonc` for subsequent deployments. Keep the template's `VOID_LIVE` Durable Object binding and class migration for live updates.
+
+After changing the database schema or auth configuration, run `vp run db:generate`, review and commit the migration, then deploy. The template's migrations include the production Better Auth schema.
+
 ## Translations
 
 The React app uses fbtee 5 with its native Oxc Vite plugin and CLI. Setup and builds generate the runtime translation files automatically.

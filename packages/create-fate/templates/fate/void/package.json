@@ -58,7 +58,6 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.0",
     "oxc-transform-react": "^0.147.0",
-    "pg": "8.22.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "catalog:",

@@ -38,7 +38,6 @@
   },
   "devDependencies": {
     "@nkzw/fate": "workspace:*",
-    "@nkzw/fate-server-cloudflare": "workspace:*",
     "@nkzw/fate-server-graphql": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@trpc/server": "^11.19.0",
@@ -46,7 +45,6 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "^6.1.1",
-    "cf-fate": "workspace:*",
     "oxc-transform-react": "^0.150.0",
     "tailwindcss": "^4.3.3",
     "vite": "catalog:",

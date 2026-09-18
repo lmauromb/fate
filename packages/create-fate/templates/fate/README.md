@@ -2,8 +2,7 @@
 
 This directory is the canonical source for fate project scaffolds.
 
-- `void/` contains the Void pages router + Drizzle template.
-- `cloudflare/` contains the Cloudflare Workers + D1 + Drizzle template.
+- `void/` contains the Void pages router + Drizzle template, with live updates and native Cloudflare deployment.
 - `drizzle/` contains the tRPC + Drizzle template.
 - `graphql/` contains the GraphQL + Prisma template.
 - `graphql-client/` contains the existing GraphQL server template.

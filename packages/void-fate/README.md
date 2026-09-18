@@ -6,6 +6,8 @@ Void adapter for [fate](https://github.com/nkzw-tech/fate).
 client wrapper needed to use fate in a Void app without keeping adapter glue in
 application code.
 
+Deploy the same app to your own Cloudflare account or the Void platform.
+
 ## New Project
 
 For a new Void app, start from the Void template:
@@ -27,6 +29,23 @@ For an existing Void project, add the packages directly:
 ```sh
 pnpm add @nkzw/fate react-fate void-fate void
 ```
+
+## Cloudflare Deployment
+
+From the project root:
+
+```sh
+vp exec void deploy --platform cloudflare
+```
+
+The Void template includes the `VOID_LIVE` Durable Object binding and class migration.
+Void provisions resources, applies checked-in database migrations, and deploys the app
+directly to your Cloudflare account. Commit the resource IDs saved in `wrangler.jsonc`.
+
+After changing your database schema or auth configuration, run `vp exec void db generate`
+and review and commit the migrations before deploying. See the
+[Cloudflare integration](https://fate.technology/integrations/cloudflare) for migration
+instructions for existing apps.
 
 ## Vite
 
@@ -131,7 +150,7 @@ export default function Layout({
 ## Custom Paths
 
 The defaults are intended to work without configuration. If your Void routes use
-different paths, pass the same values to the server and client helpers.
+different paths, update the route filenames and pass the matching paths to the client.
 
 ```tsx
 <VoidFateClient livePath="/custom-live" origin={origin} rpcPath="/custom-fate" userId={userId}>

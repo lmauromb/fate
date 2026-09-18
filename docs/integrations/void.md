@@ -1,6 +1,6 @@
 # Void Integration
 
-`void-fate` is the first-class [Void](https://void.cloud) adapter for fate to ease integration with the Void SDK and for deploying to the Void platform.
+`void-fate` is the [Void](https://void.cloud) adapter for fate. Deploy your app directly to your own Cloudflare account or to the Void platform with the same integration.
 
 Use this integration when your app runs on Void and you want the example app's
 setup without copying its adapter glue.
@@ -127,14 +127,29 @@ live.connection('Post.comments', { id: postId }).appendNode('Comment', commentId
 
 ## Routes
 
+Define a live stream once in a server-only module:
+
+```ts
+// src/fate/live.ts
+import { defineLiveStream } from 'void/live';
+
+export const fateStream = defineLiveStream({
+  allowAnonymousControl: true,
+  id: 'fate',
+});
+```
+
 Add one route for fate RPC requests:
 
 ```tsx
 // routes/fate.ts
 import { defineVoidFateRoute } from 'void-fate/server';
+import { fateStream } from '../src/fate/live.ts';
 import { fateLive, fateServer } from '../src/fate/server.ts';
 
-export const { GET, POST } = defineVoidFateRoute(fateServer, fateLive);
+export const { GET, POST } = defineVoidFateRoute(fateServer, fateLive, {
+  stream: fateStream,
+});
 ```
 
 Add a second route for the live SSE transport:
@@ -142,9 +157,9 @@ Add a second route for the live SSE transport:
 ```tsx
 // routes/fate-live.ts
 import { defineVoidFateLiveRoute } from 'void-fate/server';
-import { fateLive, fateServer } from '../src/fate/server.ts';
+import { fateStream } from '../src/fate/live.ts';
 
-export const { GET, POST } = defineVoidFateLiveRoute(fateServer, fateLive);
+export const { GET, POST } = defineVoidFateLiveRoute(fateStream);
 ```
 
 The live route handles `GET /fate-live` SSE connections and `POST /fate-live`
@@ -210,13 +225,7 @@ present.
 ## Custom Paths
 
 The default route pair is `/fate` and `/fate-live`. If your Void app uses
-different paths, configure the same values on the live adapter and client.
-
-```tsx
-export const fateLive = createVoidFateLive({
-  livePath: '/custom-fate-live',
-});
-```
+different paths, update your route filenames and configure the matching client paths.
 
 ::: code-group
 
@@ -252,14 +261,19 @@ or router configuration matches the paths you pass to the client.
 
 ## Live Transport
 
-Void can run separate request handlers for mutations and long-lived SSE
-connections. `createVoidFateLive` bridges those handlers by publishing live
-events from the request that changed data to the live route.
-
-In local development, `void-fate` uses a development token for that internal
-publish request. Outside local development, Void must provide `__VOID_PROXY_TOKEN`
-in the route environment. If no internal publish token is available, the adapter
-falls back to the in-memory live bus for the current request context.
+`createVoidFateLive` publishes entity and connection events through the `void/live`
+stream associated with the current request. Void manages the Durable Object
+transport that distributes events to connected clients across requests.
 
 The live transport is best-effort and does not replay missed events after a
 client reconnects. This matches fate's default in-memory live event bus.
+
+## Cloudflare Deployment
+
+From your project root, run:
+
+```sh
+vp exec void deploy --platform cloudflare
+```
+
+Void provisions resources and deploys directly to your Cloudflare account. See the [Cloudflare integration](/integrations/cloudflare) for setup and migration instructions.

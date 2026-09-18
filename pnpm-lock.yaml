@@ -340,9 +340,6 @@ importers:
       '@nkzw/fate':
         specifier: workspace:*
         version: link:../../packages/fate
-      '@nkzw/fate-server-cloudflare':
-        specifier: workspace:*
-        version: link:../cloudflare
       '@nkzw/fate-server-graphql':
         specifier: workspace:*
         version: link:../server-graphql
@@ -364,9 +361,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.1
         version: 6.1.1(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.150.0)
-      cf-fate:
-        specifier: workspace:*
-        version: link:../../packages/cf-fate
       oxc-transform-react:
         specifier: ^0.150.0
         version: 0.150.0
@@ -443,40 +437,6 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.3.3(@types/node@26.6.1)(@vitest/coverage-v8@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)
-
-  example/cloudflare:
-    dependencies:
-      '@nkzw/core':
-        specifier: ^1.3.1
-        version: 1.3.1
-      '@nkzw/fate':
-        specifier: workspace:*
-        version: link:../../packages/fate
-      better-auth:
-        specifier: 1.7.2
-        version: 1.7.2(1b03205d78cb24d8833c128a30b37b82)
-      cf-fate:
-        specifier: workspace:*
-        version: link:../../packages/cf-fate
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))
-      zod:
-        specifier: ^4.6.5
-        version: 4.6.5
-    devDependencies:
-      '@types/node':
-        specifier: ^26.6.1
-        version: 26.6.1
-      vite:
-        specifier: 'catalog:'
-        version: '@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)'
-      vite-plus:
-        specifier: 'catalog:'
-        version: 0.3.3(@types/node@26.6.1)(@vitest/coverage-v8@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)
-      wrangler:
-        specifier: ^4.133.0
-        version: 4.133.0(@cloudflare/workers-types@5.20260904.1)(@types/node@26.6.1)
 
   example/persistence:
     dependencies:
@@ -807,16 +767,6 @@ importers:
         specifier: 'catalog:'
         version: 0.3.3(@types/node@26.6.1)(@vitest/coverage-v8@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)
 
-  packages/cf-fate:
-    dependencies:
-      '@nkzw/fate':
-        specifier: workspace:*
-        version: link:../fate
-    devDependencies:
-      vite:
-        specifier: 'catalog:'
-        version: '@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)'
-
   packages/create-fate:
     dependencies:
       '@clack/prompts':
@@ -827,16 +777,16 @@ importers:
     dependencies:
       typedoc:
         specifier: ^0.28.20
-        version: 0.28.20(typescript@7.0.2)
+        version: 0.28.20(typescript@6.0.3)
       typedoc-plugin-markdown:
         specifier: ^4.13.0
-        version: 4.13.0(typedoc@0.28.20(typescript@7.0.2))
+        version: 4.13.0(typedoc@0.28.20(typescript@6.0.3))
       typedoc-vitepress-theme:
         specifier: ^1.1.4
-        version: 1.1.4(typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2))
+        version: 1.1.4(typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@6.0.3)))(typedoc@0.28.20(typescript@6.0.3))
       typescript:
-        specifier: ~7.0.2
-        version: 7.0.2
+        specifier: ~6.0.3
+        version: 6.0.3
 
   packages/fate:
     dependencies:
@@ -10589,22 +10539,22 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
 
-  typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@7.0.2)):
+  typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@6.0.3)):
     dependencies:
-      typedoc: 0.28.20(typescript@7.0.2)
+      typedoc: 0.28.20(typescript@6.0.3)
 
-  typedoc-vitepress-theme@1.1.4(typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2)):
+  typedoc-vitepress-theme@1.1.4(typedoc-plugin-markdown@4.13.0(typedoc@0.28.20(typescript@6.0.3)))(typedoc@0.28.20(typescript@6.0.3)):
     dependencies:
-      typedoc: 0.28.20(typescript@7.0.2)
-      typedoc-plugin-markdown: 4.13.0(typedoc@0.28.20(typescript@7.0.2))
+      typedoc: 0.28.20(typescript@6.0.3)
+      typedoc-plugin-markdown: 4.13.0(typedoc@0.28.20(typescript@6.0.3))
 
-  typedoc@0.28.20(typescript@7.0.2):
+  typedoc@0.28.20(typescript@6.0.3):
     dependencies:
       '@gerrit0/mini-shiki': 3.23.0
       lunr: 2.3.9
       markdown-it: 14.3.2
       minimatch: 10.2.6
-      typescript: 7.0.2
+      typescript: 6.0.3
       yaml: 2.9.1
 
   typescript@6.0.3: {}

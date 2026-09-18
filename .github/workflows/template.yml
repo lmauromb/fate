@@ -34,7 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         template:
-          - cloudflare
           - graphql
           - graphql-client
           - void

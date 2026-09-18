@@ -216,41 +216,6 @@ test('generates a native HTTP client with live enabled when the server supports 
   expect(sourceText).toContain('live: true');
 });
 
-test('generates a Cloudflare HTTP client with the cf-fate live connector', () => {
-  type Post = { id: string; title: string };
-  const postDataView = dataView<Post>('Post')({
-    id: true,
-    title: true,
-  });
-  const source: SourceDefinition<Post> = { id: 'id', view: postDataView };
-  const fate = createFateServer({
-    live: createLiveEventBus(),
-    roots: {
-      posts: list(postDataView),
-    },
-    sources: {
-      getSource: <Item extends Record<string, unknown>>() =>
-        source as unknown as SourceDefinition<Item>,
-      registry: createSourceRegistry([[source, {}]]),
-    },
-  });
-
-  const sourceText = createClientSource({
-    moduleExports: {
-      fate,
-      postDataView,
-      Root: { posts: list(postDataView) },
-    },
-    moduleName: '@org/server/cloudflare.ts',
-    transport: 'cloudflare',
-  });
-
-  expect(sourceText).toContain("import { connectCloudflareFateStream } from 'cf-fate/client';");
-  expect(sourceText).toContain('live: connectCloudflareFateStream');
-  expect(sourceText).toContain("const defaultCloudflareFateRpcPath = '/fate';");
-  expect(sourceText).toContain("const defaultCloudflareFateLivePath = '/fate-live';");
-});
-
 test('generates a GraphQL client source with Relay roots and configured mutations', () => {
   type User = { __typename: 'User'; id: string; name: string };
   type Post = {
@@ -319,44 +284,48 @@ test('generates a GraphQL client source with Relay roots and configured mutation
     types: [`);
 });
 
-test('generates a Void client source with endpoint defaults and server fetch', () => {
-  type Post = { id: string; title: string };
-  const postDataView = dataView<Post>('Post')({
-    id: true,
-    title: true,
-  });
-  const source: SourceDefinition<Post> = { id: 'id', view: postDataView };
-  const fateServer = createFateServer({
-    live: createLiveEventBus(),
-    roots: {
-      posts: list(postDataView),
-    },
-    sources: {
-      getSource: <Item extends Record<string, unknown>>() =>
-        source as unknown as SourceDefinition<Item>,
-      registry: createSourceRegistry([[source, {}]]),
-    },
-  });
+test.each(['react-fate', 'vue-fate'] as const)(
+  'generates a Void %s client with endpoint defaults and server fetch',
+  (clientModule) => {
+    type Post = { id: string; title: string };
+    const postDataView = dataView<Post>('Post')({
+      id: true,
+      title: true,
+    });
+    const source: SourceDefinition<Post> = { id: 'id', view: postDataView };
+    const fateServer = createFateServer({
+      live: createLiveEventBus(),
+      roots: {
+        posts: list(postDataView),
+      },
+      sources: {
+        getSource: <Item extends Record<string, unknown>>() =>
+          source as unknown as SourceDefinition<Item>,
+        registry: createSourceRegistry([[source, {}]]),
+      },
+    });
 
-  const sourceText = createClientSource({
-    moduleExports: {
-      fateServer,
-      postDataView,
-      Root: { posts: list(postDataView) },
-    },
-    moduleName: '@org/server/http.ts',
-    runtimeModuleName: '/src/fate/server.ts',
-    transport: 'void',
-  });
+    const sourceText = createClientSource({
+      clientModule,
+      moduleExports: {
+        fateServer,
+        postDataView,
+        Root: { posts: list(postDataView) },
+      },
+      moduleName: '@org/server/http.ts',
+      runtimeModuleName: '/src/fate/server.ts',
+      transport: 'void',
+    });
 
-  expect(sourceText).toContain("const defaultVoidFateRpcPath = '/fate';");
-  expect(sourceText).toContain("const defaultVoidFateLivePath = '/fate-live';");
-  expect(sourceText).toContain("import type { fateServer, Post } from '@org/server/http.ts';");
-  expect(sourceText).toContain("import { connectLiveStream } from 'void/live/client';");
-  expect(sourceText).toContain("import('@nkzw/fate/server')");
-  expect(sourceText).toContain("import('/src/fate/server.ts')");
-  expect(sourceText).toContain('import.meta.env.SSR');
-  expect(sourceText).toContain('credentials: options.userId ?');
-  expect(sourceText).toContain('url: toEndpointUrl(options.url');
-  expect(sourceText).toContain('live: connectLiveStream');
-});
+    expect(sourceText).toContain("const defaultVoidFateRpcPath = '/fate';");
+    expect(sourceText).toContain("const defaultVoidFateLivePath = '/fate-live';");
+    expect(sourceText).toContain("import type { fateServer, Post } from '@org/server/http.ts';");
+    expect(sourceText).toContain("import { connectLiveStream } from 'void/live/client';");
+    expect(sourceText).toContain("import('@nkzw/fate/server')");
+    expect(sourceText).toContain("import('/src/fate/server.ts')");
+    expect(sourceText).toContain('import.meta.env.SSR');
+    expect(sourceText).toContain('credentials: options.userId ?');
+    expect(sourceText).toContain('url: toEndpointUrl(options.url');
+    expect(sourceText).toContain('live: connectLiveStream');
+  },
+);

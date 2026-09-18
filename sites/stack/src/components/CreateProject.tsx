@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import StackShaders from './StackShaders.tsx';
 
-const commands =
-  'vp create fate my-app --template cloudflare\ncd my-app\nvp run dev:setup\nvp run dev';
+const commands = 'vp create fate my-app\ncd my-app\nvp run dev:setup\nvp run dev';
 
 const agentPrompt = `Set up a new project using the fate stack: React, TypeScript, fate, Void, fbtee, and Vite+.
 
@@ -12,15 +11,15 @@ Install Vite+ if it's not already installed.
 
 Create the project in a new empty directory, using the project name I provide or my-app by default:
 
-vp create fate my-app --template cloudflare --framework react
+vp create fate my-app --framework react
 cd my-app
 vp run dev:setup
 
-Keep the template's React client with the Void pages router and separate Cloudflare Worker using cf-fate, D1, Drizzle, and Durable Objects for live updates. Preserve fbtee, Better Auth, Tailwind, React Compiler, and @nkzw/oxlint-config. Follow the generated README and AGENTS.md.
+Keep the template's full-stack Void app with the React pages router, void-fate, D1, Drizzle, and void/live for live updates. Use native Cloudflare deployment through vp exec void deploy --platform cloudflare. Preserve fbtee, Better Auth, Tailwind, React Compiler, and @nkzw/oxlint-config. Follow the generated README and AGENTS.md.
 
 Use the template's fbtee integration for translated React components, preserving its translation extraction and runtime initialization.
 
-Run the generated project's checks, tests, and production build, fix any setup issues, then start the client and Worker with vp run dev. Tell me the local URLs, what is configured, and any remaining Cloudflare deployment setup steps.`;
+Run the generated project's checks, tests, and production build, fix any setup issues, then start the app with vp run dev. Tell me the local URL, what is configured, and any remaining Cloudflare deployment setup steps.`;
 
 type CopyKind = 'commands' | 'prompt';
 

@@ -1,1 +1,1 @@
-export type FateViteTransport = 'cloudflare' | 'graphql' | 'native' | 'trpc' | 'void';
+export type FateViteTransport = 'graphql' | 'native' | 'trpc' | 'void';

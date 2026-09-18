@@ -1,161 +1,43 @@
 # Cloudflare Integration
 
-`cf-fate` is the first-class Cloudflare Workers adapter for Fate native HTTP transport and live views.
-
-Use it when your backend runs directly on Cloudflare Workers and you want fate live views without adopting the Void platform.
+Deploy fate directly to your own Cloudflare account with [Void](/integrations/void). The Void template includes the app, D1 database, Drizzle migrations, Better Auth, and live updates through `void-fate` and `void/live`.
 
 ## New Project
 
-For a new Cloudflare Workers app, start from the Cloudflare template. It includes the client, Worker server, D1 migrations, Wrangler config, Durable Object live transport, auth wiring, and generated fate client setup.
+```sh
+vp create fate my-app --template void
+cd my-app
+vp run dev:setup
+vp run dev
+```
+
+Add `--framework vue` to the create command to use Vue instead of React.
+
+## Deploy
+
+From the project root:
 
 ```sh
-vp create fate my-app --template cloudflare
+vp exec void deploy --platform cloudflare
 ```
 
-Use Vue instead of React with:
+Void signs you into Cloudflare when needed, lets you select your account, provisions resources, applies checked-in database migrations, and deploys the app. It saves resource IDs in the root `wrangler.jsonc`; commit that updated config for subsequent deployments. A Void platform account is not required.
 
-```sh
-vp create fate my-app --template cloudflare --framework vue
-```
+The template includes the `VOID_LIVE` Durable Object binding and its class migration. Keep them in `wrangler.jsonc` so live subscriptions can receive updates across requests. RPC requests use `/fate`, and live updates use `/fate-live`.
 
-## Existing Project
+After changing your database schema or auth configuration, run `vp run db:generate`, review and commit the generated migrations, then deploy. The migrations must include the Better Auth schema used in production.
 
-For an existing Cloudflare Workers project, add the packages directly:
+See [Void's Cloudflare deployment guide](https://void.cloud/integrations/cloudflare) for custom domains, secrets, and CI configuration.
 
-```sh
-pnpm add @nkzw/fate react-fate cf-fate drizzle-orm
-pnpm add -D wrangler
-```
+## Migrating from cf-fate
 
-For Vue clients, replace `react-fate` with `vue-fate`.
+Fate 1.6 replaces the standalone Cloudflare adapter and template with the Void integration. Use `--template void` for new projects and `transport: 'void'` in the fate Vite plugin.
 
-## Server Setup
+For an existing app, move the Worker routes into Void's `routes/` directory and follow the [Void integration](/integrations/void) for the complete setup:
 
-Create a Cloudflare live stream and pass its Fate live facade to `createFateServer`.
+- Define the live stream with `defineLiveStream` from `void/live`.
+- Use `createVoidFateLive`, `defineVoidFateRoute`, and `defineVoidFateLiveRoute` from `void-fate/server`.
+- Let the generated client use `void/live/client` for live connections.
+- Remove the `cf-fate` dependency and the custom Worker entry point.
 
-```ts
-// src/fate/live.ts
-import { defineCloudflareFateLiveStream } from 'cf-fate/server';
-
-export const fateStream = defineCloudflareFateLiveStream({
-  allowAnonymousControl: true,
-  binding: 'FATE_LIVE',
-  id: 'fate',
-});
-```
-
-```ts
-// src/fate/server.ts
-import { createFateServer } from '@nkzw/fate/server';
-import { createCloudflareFateLive } from 'cf-fate/server';
-
-export const fateLive = createCloudflareFateLive();
-export const { live } = fateLive;
-
-export const fateServer = createFateServer({
-  live,
-  // context,
-  // roots,
-  // sources,
-});
-```
-
-Publish from mutations through the normal Fate live bus:
-
-```ts
-live.update('Post', postId, { changed: ['likes'] });
-live.connection('Post.comments', { id: postId }).appendNode('Comment', commentId);
-```
-
-## Worker Routes
-
-Expose one route for Fate RPC and one route for the SSE live stream.
-
-```ts
-import {
-  createCloudflareFateLiveDurableObject,
-  defineCloudflareFateLiveRoute,
-  defineCloudflareFateRoute,
-} from 'cf-fate/server';
-import { fateStream } from './fate/live';
-import { fateLive, fateServer } from './fate/server';
-
-const fateRoute = defineCloudflareFateRoute(fateServer, fateLive, { stream: fateStream });
-const fateLiveRoute = defineCloudflareFateLiveRoute(fateStream);
-
-export const FateLiveDurableObject = createCloudflareFateLiveDurableObject({
-  binding: 'FATE_LIVE',
-});
-
-export default {
-  fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    if (url.pathname === '/fate') {
-      return fateRoute.fetch(request, env, ctx);
-    }
-    if (url.pathname === '/fate-live') {
-      return fateLiveRoute.fetch(request, env, ctx);
-    }
-    return new Response('Not Found', { status: 404 });
-  },
-};
-```
-
-## Wrangler
-
-Add a Durable Object binding and migration. `cf-fate` uses `node:async_hooks`, so the Worker must enable Node compatibility.
-
-```jsonc
-{
-  "compatibility_flags": ["nodejs_compat"],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "FATE_LIVE",
-        "class_name": "FateLiveDurableObject",
-      },
-    ],
-  },
-  "migrations": [
-    {
-      "tag": "fate-live-v1",
-      "new_sqlite_classes": ["FateLiveDurableObject"],
-    },
-  ],
-}
-```
-
-## Client
-
-Use the Cloudflare transport in the Fate Vite plugin:
-
-```ts
-import { fate } from 'react-fate/vite';
-
-fate({
-  module: './src/fate/server.ts',
-  transport: 'cloudflare',
-});
-```
-
-Then point the generated client at the Worker endpoints:
-
-```tsx
-import { FateClient } from 'react-fate';
-import { createFateClient } from 'react-fate/client';
-
-const fate = createFateClient({
-  liveUrl: 'http://localhost:8787/fate-live',
-  url: 'http://localhost:8787/fate',
-});
-
-export function App({ children }) {
-  return <FateClient client={fate}>{children}</FateClient>;
-}
-```
-
-## Semantics
-
-`cf-fate` uses one browser `EventSource` per Fate client and multiplexes entity and connection topics over that stream. Durable Objects keep connection and topic subscription state so later requests, mutations, scheduled handlers, and queue consumers can publish to already-connected clients.
-
-Delivery is at-most-once. Events are ordered within one topic, but events are not durably replayed after a disconnect. Use authoritative refetching or application-owned replay storage if missed events must be recovered.
+Deploy the Void app as a new Worker with its `VOID_LIVE` binding and class migration. The old `FATE_LIVE` Durable Object class and its active connections are not migrated. Preserve existing database IDs and migration history when reusing your database, and reconnect clients to the new app after deployment.

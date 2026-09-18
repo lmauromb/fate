@@ -13,7 +13,6 @@ import Section from '../src/ui/Section.tsx';
 import AuthClient from '../src/user/AuthClient.tsx';
 
 const isGraphQLTransport = import.meta.env.VITE_FATE_TRANSPORT === 'graphql';
-const isCloudflareTransport = import.meta.env.VITE_FATE_TRANSPORT === 'cloudflare';
 
 const Thinking = () => (
   <Section>
@@ -42,26 +41,20 @@ export default function Layout({ children }: { children: ReactNode }) {
             fetch: credentialFetch,
             url: `${env('SERVER_URL')}/graphql`,
           }
-        : isCloudflareTransport
-          ? {
-              ...(credentialFetch ? { fetch: credentialFetch } : null),
-              liveUrl: `${env('SERVER_URL')}/fate-live`,
-              url: `${env('SERVER_URL')}/fate`,
-            }
-          : {
-              ...(credentialFetch ? { fetch: credentialFetch } : null),
-              links: [
-                httpBatchLink({
-                  fetch: (input, init) =>
-                    fetch(input, {
-                      ...init,
-                      credentials: userId ? 'include' : undefined,
-                    }),
-                  url: `${env('SERVER_URL')}/trpc`,
-                }),
-              ],
-              liveUrl: `${env('SERVER_URL')}/fate`,
-            }) as never,
+        : {
+            ...(credentialFetch ? { fetch: credentialFetch } : null),
+            links: [
+              httpBatchLink({
+                fetch: (input, init) =>
+                  fetch(input, {
+                    ...init,
+                    credentials: userId ? 'include' : undefined,
+                  }),
+                url: `${env('SERVER_URL')}/trpc`,
+              }),
+            ],
+            liveUrl: `${env('SERVER_URL')}/fate`,
+          }) as never,
     );
   }, [userId]);
 

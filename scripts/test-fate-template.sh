@@ -16,9 +16,6 @@ fi
 cd "${repo_root}"
 vp run --filter '@nkzw/fate' build
 vp run --filter react-fate build
-if [[ "${template}" == "cloudflare" ]]; then
-  vp run --filter cf-fate build
-fi
 if [[ "${template}" == "void" ]]; then
   vp run --filter void-fate build
 fi
@@ -34,9 +31,6 @@ git init -q "${target_dir}"
 mkdir -p "${package_dir}"
 vp pm pack --filter '@nkzw/fate' --out "${package_dir}/fate.tgz"
 vp pm pack --filter react-fate --out "${package_dir}/react-fate.tgz"
-if [[ "${template}" == "cloudflare" ]]; then
-  vp pm pack --filter cf-fate --out "${package_dir}/cf-fate.tgz"
-fi
 if [[ "${template}" == "void" ]]; then
   vp pm pack --filter void-fate --out "${package_dir}/void-fate.tgz"
 fi
@@ -50,9 +44,6 @@ if [[ -d "${target_dir}/server" ]]; then
   better_auth_url="${BETTER_AUTH_URL:-http://localhost:9000}"
   client_domain="${CLIENT_DOMAIN:-http://localhost:5173}"
   vite_server_url="${VITE_SERVER_URL:-http://localhost:9000}"
-  if [[ "${template}" == "cloudflare" ]]; then
-    vite_server_url="${VITE_SERVER_URL:-http://localhost:8787}"
-  fi
 
   cat >"${target_dir}/server/.env" <<EOF
 DATABASE_URL="${database_url}"
@@ -66,7 +57,6 @@ fi
 TEMPLATE_DIR="${target_dir}" \
 FATE_PACKAGE="file:${package_dir}/fate.tgz" \
 REACT_FATE_PACKAGE="file:${package_dir}/react-fate.tgz" \
-CF_FATE_PACKAGE="file:${package_dir}/cf-fate.tgz" \
 VOID_FATE_PACKAGE="file:${package_dir}/void-fate.tgz" \
 node --input-type=module <<'EOF'
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -75,9 +65,6 @@ const path = `${process.env.TEMPLATE_DIR}/pnpm-workspace.yaml`;
 const overrides = [
   `  '@nkzw/fate': ${JSON.stringify(process.env.FATE_PACKAGE)}`,
   `  react-fate: ${JSON.stringify(process.env.REACT_FATE_PACKAGE)}`,
-  ...(process.env.TEMPLATE_DIR?.endsWith('/cloudflare')
-    ? [`  cf-fate: ${JSON.stringify(process.env.CF_FATE_PACKAGE)}`]
-    : []),
   ...(process.env.TEMPLATE_DIR?.endsWith('/void')
     ? [`  void-fate: ${JSON.stringify(process.env.VOID_FATE_PACKAGE)}`]
     : []),
