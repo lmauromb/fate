@@ -185,6 +185,44 @@ describe('create-fate templates', () => {
     expect(packageJson).not.toContain('@app/server');
   });
 
+  test.each(['react', 'vue'])(
+    'generates a GraphQL %s client with the Void environment schema',
+    async (framework) => {
+      const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-graphql-env-'));
+      try {
+        const target = join(tempRoot, 'app');
+        await execFileAsync(
+          process.execPath,
+          [
+            join(packageRoot, 'bin/create-fate.mjs'),
+            target,
+            '--template',
+            'graphql-client',
+            '--framework',
+            framework,
+            '--no-setup',
+          ],
+          {
+            cwd: tempRoot,
+            encoding: 'utf8',
+            env: { ...process.env, npm_config_registry: registryURL },
+            timeout: 30_000,
+          },
+        );
+
+        expect(existsSync(join(target, '.env.example'))).toBe(false);
+        expect(readFileSync(join(target, 'env.ts'), 'utf8')).toBe(
+          readFileSync(join(packageRoot, 'templates/fate/graphql-client/env.ts'), 'utf8'),
+        );
+        expect(readFileSync(join(target, '.gitignore'), 'utf8')).toContain('.env');
+        expect(readFileSync(join(target, 'vite.config.ts'), 'utf8')).not.toContain('dotenv');
+      } finally {
+        rmSync(tempRoot, { force: true, recursive: true });
+      }
+    },
+    30_000,
+  );
+
   test('generates Vue projects for every backend template', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'create-fate-vue-'));
     try {

@@ -494,7 +494,7 @@ import env from '../src/lib/env.ts';`,
     : false,
   url: import.meta.env.VITE_GRAPHQL_URL,
 }`,
-    dotenvConfig: `dotenv.config({ path: join(root, '.env'), quiet: true })`,
+    dotenvConfig: '',
     envKeys: `[]`,
     envValues: `{}`,
     fateModule: './src/fate/graphql.ts',
@@ -534,7 +534,7 @@ const shared = useShared<SharedData>();`,
   origin: shared.origin,
   userId: shared.auth.user?.id,
 }`,
-    dotenvConfig: `dotenv.config({ path: join(root, '.env'), quiet: true })`,
+    dotenvConfig: '',
     envKeys: `[]`,
     envValues: `{}`,
     fateModule: './src/fate/server.ts',
@@ -780,7 +780,6 @@ const configureVueTemplate = (targetPath, selectedVariant) => {
   const config = vueTransportConfigs[selectedVariant];
   replaceInFiles(frontendRoot, {
     __CREATE_FATE_OPTIONS__: config.createOptions,
-    __DOTENV_CONFIG__: config.dotenvConfig,
     __ENV_KEYS__: config.envKeys,
     __ENV_VALUES__: config.envValues,
     __FATE_MODULE__: config.fateModule,
@@ -823,6 +822,13 @@ const configureVueTemplate = (targetPath, selectedVariant) => {
         ? 'build: {},'
         : "build: { outDir: join(root, '../dist/client') },",
     '/* __CLIENT_IMPORTS__ */': config.clientImports,
+    '/* __ENV_CONFIG__ */': config.dotenvConfig
+      ? `import { join } from 'node:path';
+import dotenv from 'dotenv';
+
+const root = process.cwd();
+${config.dotenvConfig};`
+      : '',
     '/* __FATE_TRANSPORT__ */': config.fateTransport,
   });
 };

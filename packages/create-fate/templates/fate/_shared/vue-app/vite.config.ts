@@ -1,14 +1,11 @@
-import { join } from 'node:path';
 import nkzw from '@nkzw/oxlint-config';
 import tailwindcss from '@tailwindcss/vite';
 import { voidVue } from '@void/vue/plugin';
-import dotenv from 'dotenv';
 import { defineConfig, lazyPlugins } from 'vite-plus';
 import { voidPlugin } from 'void';
 import { fate } from 'vue-fate/vite';
 
-const root = process.cwd();
-__DOTENV_CONFIG__;
+/* __ENV_CONFIG__ */
 
 export default defineConfig({
   /* __BUILD_CONFIG__ */
@@ -32,6 +29,20 @@ export default defineConfig({
     extends: [nkzw],
     ignorePatterns: __LINT_IGNORE_PATTERNS__,
     options: { typeAware: true, typeCheck: true },
+    overrides: [
+      {
+        files: ['**/*.vue'],
+        globals: {
+          defineEmits: 'readonly',
+          defineExpose: 'readonly',
+          defineModel: 'readonly',
+          defineOptions: 'readonly',
+          defineProps: 'readonly',
+          defineSlots: 'readonly',
+          withDefaults: 'readonly',
+        },
+      },
+    ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
     },
@@ -43,16 +54,12 @@ export default defineConfig({
       /* __FATE_TRANSPORT__ */
     }),
   ],
-  run: {
-    tasks: {
-      'test:all': {
-        command: 'vp check && vp test',
-      },
-    },
-  },
   server: { port: 6001 },
   ssr: { noExternal: ['@nkzw/fate', 'vue-fate'] },
   staged: {
     '*': 'vp check --fix',
+  },
+  test: {
+    passWithNoTests: true,
   },
 });

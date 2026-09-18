@@ -12,7 +12,7 @@ vp create fate my-app --template graphql-client
 
 ## Connect Your Server
 
-Set the GraphQL endpoint in `.env`:
+`env.ts` declares the public endpoint variables. Its sample GraphQL URL is a placeholder; replace it with your server's URL. For local development, create a gitignored `.env` file to override the default:
 
 ```bash
 VITE_GRAPHQL_URL="https://api.example.com/graphql"
@@ -23,6 +23,16 @@ If your server supports GraphQL SSE, set the live endpoint too:
 ```bash
 VITE_GRAPHQL_LIVE_URL="https://api.example.com/graphql/stream"
 ```
+
+The live endpoint is optional; omit it or leave it empty to disable live updates. Void validates both URLs and uses `.env` only for local development. Keep the variable schema in `env.ts` and local values in `.env`.
+
+For production, supply your public endpoints in the build environment or change their defaults in `env.ts`:
+
+```bash
+VITE_GRAPHQL_URL="https://api.example.com/graphql" vp run build
+```
+
+These `VITE_*` values are embedded in the client bundle. Do not put credentials in them. Production builds do not read `.env`.
 
 Then edit `src/fate/graphql.ts`. This file is the mapping layer between your GraphQL schema and _fate_:
 
