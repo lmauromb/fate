@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
 import { globSync } from 'glob';
-import { format } from 'oxfmt';
+import { format } from 'vite-plus/fmt';
 
 console.log(styleText('bold', '› Generating GraphQL schema import map...'));
 

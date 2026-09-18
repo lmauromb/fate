@@ -6,7 +6,8 @@ packages:
 allowBuilds:
   '@prisma/engines': true
   '@swc/core': true
-  better-sqlite3: true
+  better-sqlite3@12.11.1: true
+  better-sqlite3@13.0.3: false
   esbuild: true
   msgpackr-extract: true
   prisma: true
@@ -15,10 +16,10 @@ allowBuilds:
   workerd: true
 
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.3.2
-  vite-plus: 0.3.2
-  vitest: 4.1.11
-  '@vitest/coverage-v8': 4.1.11
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.3
+  vite-plus: 0.3.3
+  vitest: 5.0.1
+  '@vitest/coverage-v8': 5.0.1
 
 onlyBuiltDependencies:
   - '@prisma/client'
@@ -48,3 +49,18 @@ peerDependencyRules:
   allowedVersions:
     vite: '*'
     vitest: '*'
+
+minimumReleaseAgeExclude:
+  - '@nkzw/*'
+  - '@void/*'
+  - 'void'
+  - '@voidzero-dev/vite-plus-core@0.3.3'
+  - '@voidzero-dev/vite-plus-darwin-arm64@0.3.3'
+  - '@voidzero-dev/vite-plus-darwin-x64@0.3.3'
+  - '@voidzero-dev/vite-plus-linux-arm64-gnu@0.3.3'
+  - '@voidzero-dev/vite-plus-linux-arm64-musl@0.3.3'
+  - '@voidzero-dev/vite-plus-linux-x64-gnu@0.3.3'
+  - '@voidzero-dev/vite-plus-linux-x64-musl@0.3.3'
+  - '@voidzero-dev/vite-plus-win32-arm64-msvc@0.3.3'
+  - '@voidzero-dev/vite-plus-win32-x64-msvc@0.3.3'
+  - vite-plus@0.3.3

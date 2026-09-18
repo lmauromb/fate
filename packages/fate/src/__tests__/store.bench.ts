@@ -1,7 +1,8 @@
-import { bench, describe } from 'vite-plus/test';
+import { describe } from 'vite-plus/test';
 import ViewDataCache from '../cache.ts';
 import { createNodeRef } from '../node-ref.ts';
 import { getListKey, Store } from '../store.ts';
+import bench from './bench.ts';
 
 const listCount = 2000;
 const listSize = 50;

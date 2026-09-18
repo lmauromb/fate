@@ -1,7 +1,8 @@
-import { bench, describe } from 'vite-plus/test';
+import { describe } from 'vite-plus/test';
 import { decodeHydrationValue, encodeHydrationValue } from '../hydration.ts';
 import { createNodeRef } from '../node-ref.ts';
 import { getListKey, Store, type StoreHydrationState } from '../store.ts';
+import bench from './bench.ts';
 
 const recordCount = 2000;
 const listCount = 200;

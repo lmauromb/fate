@@ -22,13 +22,13 @@
     "@nkzw/fate": "workspace:*",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "@trpc/server": "^11.18.0",
+    "@trpc/server": "^11.19.0",
     "better-auth": "1.7.5",
     "hono": "^4.13.8",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.1",
     "nodemon": "^3.1.14",
     "prisma": "^7.10.0"
   },

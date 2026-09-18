@@ -51,7 +51,7 @@
     "@paper-design/shaders": "^0.0.80",
     "@playwright/test": "^1.63.0",
     "@swc/core": "^1.16.2",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.1",
     "@vitest/coverage-v8": "catalog:",
     "dotenv": "^17.4.2",
     "eslint-plugin-import-x": "^4.17.1",
@@ -72,5 +72,5 @@
     "node": ">=24.0.0",
     "pnpm": ">=11.0.0"
   },
-  "packageManager": "pnpm@11.0.6"
+  "packageManager": "pnpm@12.4.2"
 }
