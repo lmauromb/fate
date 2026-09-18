@@ -72,7 +72,8 @@ jobs:
       - name: Set up pnpm for Wrangler
         uses: pnpm/action-setup@v4
         with:
-          version: '11.0.6'
+          # Keep the workspace's packageManager as the only pnpm version pin.
+          package_json_file: package.json
           run_install: false
 
       - name: Install dependencies
@@ -87,5 +88,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           workingDirectory: sites/stack
           command: pages deploy dist/client --project-name=fatestack --branch=main
