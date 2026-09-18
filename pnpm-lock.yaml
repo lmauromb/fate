@@ -164,9 +164,21 @@ settings:
 
 catalogs:
   default:
+    '@types/react':
+      specifier: 19.3.0
+      version: 19.3.0
+    '@types/react-dom':
+      specifier: 19.3.0
+      version: 19.3.0
     '@vitest/coverage-v8':
       specifier: 5.0.1
       version: 5.0.1
+    react:
+      specifier: 19.3.0
+      version: 19.3.0
+    react-dom:
+      specifier: 19.3.0
+      version: 19.3.0
     vite:
       specifier: npm:@voidzero-dev/vite-plus-core@0.3.3
       version: 0.3.3
@@ -307,10 +319,10 @@ importers:
         specifier: ^1.46.0
         version: 1.46.0(react@19.3.0)
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react-dom:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       react-error-boundary:
         specifier: ^6.1.5
@@ -344,10 +356,10 @@ importers:
         specifier: ^26.6.1
         version: 26.6.1
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^6.1.1
@@ -478,10 +490,10 @@ importers:
         specifier: workspace:*
         version: link:../../packages/fate-indexeddb
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react-dom:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       react-fate:
         specifier: workspace:*
@@ -497,10 +509,10 @@ importers:
         specifier: ^26.6.1
         version: 26.6.1
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       vite:
         specifier: 'catalog:'
@@ -734,10 +746,10 @@ importers:
         specifier: ^1.46.0
         version: 1.46.0(react@19.3.0)
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react-dom:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       react-error-boundary:
         specifier: ^6.1.5
@@ -771,10 +783,10 @@ importers:
         specifier: ^26.6.1
         version: 26.6.1
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^6.1.1
@@ -798,8 +810,8 @@ importers:
   packages/cf-fate:
     dependencies:
       '@nkzw/fate':
-        specifier: ^1.5.2
-        version: 1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)
+        specifier: workspace:*
+        version: link:../fate
     devDependencies:
       vite:
         specifier: 'catalog:'
@@ -861,8 +873,8 @@ importers:
         version: 8.0.3
     devDependencies:
       '@nkzw/fate':
-        specifier: ^1.5.2
-        version: 1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)
+        specifier: workspace:*
+        version: link:../fate
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5
@@ -876,36 +888,36 @@ importers:
   packages/react-fate:
     dependencies:
       '@nkzw/fate':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../fate
     devDependencies:
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react-dom:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
 
   packages/void-fate:
     dependencies:
       '@nkzw/fate':
-        specifier: ^1.5.2
-        version: 1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)
+        specifier: workspace:*
+        version: link:../fate
       react-fate:
-        specifier: ^1.5.2
-        version: 1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: workspace:*
+        version: link:../react-fate
     devDependencies:
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       vite:
         specifier: 'catalog:'
@@ -917,7 +929,7 @@ importers:
   packages/vue-fate:
     dependencies:
       '@nkzw/fate':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../fate
     devDependencies:
       vue:
@@ -939,10 +951,10 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       react:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       react-dom:
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       tailwind-merge:
         specifier: ^3.7.0
@@ -970,10 +982,10 @@ importers:
         specifier: ^26.6.1
         version: 26.6.1
       '@types/react':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0
       '@types/react-dom':
-        specifier: ^19.3.0
+        specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^6.1.1
@@ -2313,25 +2325,6 @@ packages:
     resolution: {integrity: sha512-IoU8kOqHfnf7se2dGxMD/7RPm6WVjzjOjWSo7FulRx3lJzuZvXioSkT5Nd82l66DH3Pl2whw74lPT1di3KMwFA==}
     peerDependencies:
       eslint: '>= 9'
-
-  '@nkzw/fate@1.5.2':
-    resolution: {integrity: sha512-hih0tPqGMbc3syt/HpIDG4uH4Mlp9Vq5G1Hot7mvI6Ubid2tyFcKHW6KsLRBS/kZQ8V8DixEm3CASnjBgX47tg==}
-    hasBin: true
-    peerDependencies:
-      '@trpc/client': ^11.6.0
-      drizzle-orm: ^0.45.0
-      graphql: ^16.0.0 || ^17.0.0
-      graphql-sse: ^2.6.0
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
-    peerDependenciesMeta:
-      drizzle-orm:
-        optional: true
-      graphql:
-        optional: true
-      graphql-sse:
-        optional: true
-      vite:
-        optional: true
 
   '@nkzw/find-workspaces@1.1.0':
     resolution: {integrity: sha512-QcsK/u1SY4erdAUGopD3fa1S0VGhU7cL96pNNN+7/K7/jhdCTezwBY85GaNo4cS+9pgysmfDfPUChAK+U7QyDA==}
@@ -5870,13 +5863,6 @@ packages:
       '@types/react':
         optional: true
 
-  react-fate@1.5.2:
-    resolution: {integrity: sha512-x5Cs+yuPJ0z6nPJ3VmokbXUGKRYbeRA2HIxemH5VDbb+PhnRzkYtGgzSfS5JMHEKS4FtDaKDnelA29pzECGdOQ==}
-    hasBin: true
-    peerDependencies:
-      react: ^19.2.0
-      react-dom: ^19.2.0
-
   react-is@17.0.2:
     resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
 
@@ -7335,17 +7321,6 @@ snapshots:
   '@nkzw/eslint-plugin@2.0.0(eslint@9.39.3(jiti@2.7.0)(supports-color@10.2.2))':
     dependencies:
       eslint: 9.39.3(jiti@2.7.0)(supports-color@10.2.2)
-
-  '@nkzw/fate@1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)':
-    dependencies:
-      '@trpc/client': 11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2)
-      superjson: 2.2.6
-      zod: 4.6.5
-    optionalDependencies:
-      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))
-      graphql: 17.0.2
-      graphql-sse: 2.6.1(graphql@17.0.2)
-      vite: '@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)'
 
   '@nkzw/find-workspaces@1.1.0':
     dependencies:
@@ -10387,18 +10362,6 @@ snapshots:
       react: 19.3.0
     optionalDependencies:
       '@types/react': 19.3.0
-
-  react-fate@1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
-    dependencies:
-      '@nkzw/fate': 1.5.2(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@7.0.2))(typescript@7.0.2))(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260904.1)(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.17)(mysql2@3.24.4(@types/node@26.6.1))(pg@8.23.0)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)))(graphql-sse@2.6.1(graphql@17.0.2))(graphql@17.0.2)
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
-    transitivePeerDependencies:
-      - '@trpc/client'
-      - drizzle-orm
-      - graphql
-      - graphql-sse
-      - vite
 
   react-is@17.0.2: {}
 

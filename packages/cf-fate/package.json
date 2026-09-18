@@ -40,7 +40,7 @@
     "build": "vp pack --tsconfig tsconfig.json -d lib --target=node24 src/index.ts src/client.ts src/server.ts"
   },
   "dependencies": {
-    "@nkzw/fate": "^1.5.2"
+    "@nkzw/fate": "workspace:*"
   },
   "devDependencies": {
     "vite": "catalog:"

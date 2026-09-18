@@ -22,7 +22,7 @@
     "idb": "^8.0.3"
   },
   "devDependencies": {
-    "@nkzw/fate": "^1.5.2",
+    "@nkzw/fate": "workspace:*",
     "fake-indexeddb": "^6.2.5",
     "vite": "catalog:",
     "vite-plus": "catalog:"

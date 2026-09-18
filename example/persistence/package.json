@@ -10,16 +10,16 @@
     "@nkzw/fate": "workspace:*",
     "@nkzw/fate-client": "workspace:*",
     "@nkzw/fate-indexeddb": "workspace:*",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "react-fate": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.1",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   }
