@@ -1,5 +1,7 @@
 # Server Integration
 
+For the native MongoDB driver with Papr validation, see the [MongoDB integration](./mongodb.md). It provides a source adapter for native fate/tRPC and a working Pothos + DataLoader GraphQL example.
+
 Until now, we have focused on the client-side API of fate. You'll need a backend that can be wired into fate's typed request model so the Vite plugin can connect the typed fate APIs to your app. _fate_ currently ships three integration paths:
 
 - The native fate protocol, which is transport-agnostic and can be hosted by any Fetch-compatible server.

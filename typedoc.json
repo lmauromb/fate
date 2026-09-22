@@ -8,6 +8,7 @@
     "packages/fate-indexeddb/src/index.ts",
     "packages/fate/src/server.ts",
     "packages/fate/src/server/drizzle.ts",
+    "packages/fate/src/server/mongodb.ts",
     "packages/fate/src/server/prisma.ts",
     "packages/fate/src/vite.ts",
     "packages/react-fate/src/index.tsx"

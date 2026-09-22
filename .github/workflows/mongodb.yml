@@ -1,0 +1,34 @@
+name: MongoDB integration
+
+on:
+  push:
+    branches: [main, with-mongodb]
+  pull_request:
+    branches: [main]
+
+jobs:
+  mongodb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      FATE_MONGODB_URL: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.20.0
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Start MongoDB replica set
+        working-directory: example/server-mongodb
+        run: |
+          docker compose up -d --wait
+          docker compose exec -T mongodb mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          docker compose exec -T mongodb mongosh --quiet --eval 'for(let n=0;n<60;n++){if(db.hello().isWritablePrimary)quit(0);sleep(1000)}quit(1)'
+      - run: vp run --filter @nkzw/fate build
+      - name: Test native driver, Papr and all example transports
+        run: vp test packages/fate/src/server/__tests__/mongodb.test.ts example/server-mongodb/src/__tests__/app.test.ts
+      - if: always()
+        run: docker compose -f example/server-mongodb/compose.yaml down -v
