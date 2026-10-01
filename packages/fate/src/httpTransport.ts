@@ -473,22 +473,42 @@ export function createHTTPTransport<
       const source = new EventSourceCtor(sourceUrl.href, { withCredentials: true });
 
       const control = async (controlOperations: Array<FateLiveControlOperation>) => {
-        const response = await fetchImpl(liveEndpointUrl, {
-          body: JSON.stringify({
-            connectionId,
-            operations: controlOperations,
-            version: 1,
-          } satisfies FateLiveControlRequest),
-          headers: await requestHeaders({ 'content-type': 'application/json' }, headers),
-          method: 'POST',
-        });
-        if (!response.ok) {
-          throw await responseError(response);
+        if (closed) {
+          return;
         }
 
-        const payload = assertProtocolResponse(await response.json());
-        for (const result of payload.results) {
-          resultValue(result);
+        try {
+          const controlHeaders = await requestHeaders(
+            { 'content-type': 'application/json' },
+            headers,
+          );
+          if (closed) {
+            return;
+          }
+
+          const response = await fetchImpl(liveEndpointUrl, {
+            body: JSON.stringify({
+              connectionId,
+              operations: controlOperations,
+              version: 1,
+            } satisfies FateLiveControlRequest),
+            headers: controlHeaders,
+            method: 'POST',
+          });
+          if (!response.ok) {
+            throw await responseError(response);
+          }
+
+          const payload = assertProtocolResponse(await response.json());
+          for (const result of payload.results) {
+            resultValue(result);
+          }
+        } catch (error) {
+          // Requests already in flight can fail after shutdown; their errors
+          // must not reach subscriptions on a replacement connection.
+          if (!closed) {
+            throw error;
+          }
         }
       };
 
@@ -568,7 +588,7 @@ export function createHTTPTransport<
         add(operation) {
           operations.set(operation.id, operation);
           void open
-            .then(() => (closed ? undefined : control([withLastEventId(operation)])))
+            .then(() => control([withLastEventId(operation)]))
             .catch((error) => {
               operations.delete(operation.id);
               liveSubscriptions.delete(operation.id);
@@ -587,14 +607,12 @@ export function createHTTPTransport<
 
           void open
             .then(() =>
-              closed
-                ? undefined
-                : control([
-                    {
-                      id,
-                      kind: 'unsubscribe',
-                    },
-                  ]),
+              control([
+                {
+                  id,
+                  kind: 'unsubscribe',
+                },
+              ]),
             )
             .catch(reportError);
         },

@@ -90,6 +90,7 @@ const liveControlFetch = () =>
           ...(operation.topic && { topic: operation.topic }),
         }),
       ),
+      version: 1,
     });
   });
 
@@ -384,6 +385,121 @@ test('closes the native SSE stream without unsubscribing from a closed connectio
   expect(fetch).toHaveBeenCalledTimes(5);
   expect(handlers.onError).not.toHaveBeenCalled();
 });
+
+test.each(['subscribe', 'unsubscribe', 'reconnect'] as const)(
+  'skips native %s requests when the stream closes while headers resolve',
+  async (operation) => {
+    const pendingHeaders = Promise.withResolvers<HeadersInit>();
+    const headers = vi.fn<() => HeadersInit | Promise<HeadersInit>>(() => ({}));
+    const fetch = liveControlFetch();
+    const transport = createHTTPTransport({
+      eventSource: resetMockEventSource(),
+      fetch,
+      headers,
+      url: 'http://local/fate',
+    });
+    const handlers = { onData: vi.fn(), onError: vi.fn() };
+    const disposeA = transport.subscribeById?.('Post', '1', new Set(['id']), undefined, handlers);
+    const disposeB = transport.subscribeById?.('Post', '2', new Set(['id']), undefined, handlers);
+    const source = await openLiveStream();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    headers.mockImplementationOnce(() => pendingHeaders.promise);
+    let disposeC: (() => void) | undefined;
+    if (operation === 'subscribe') {
+      disposeC = transport.subscribeById?.('Post', '3', new Set(['id']), undefined, handlers);
+    } else if (operation === 'unsubscribe') {
+      disposeA?.();
+    } else {
+      source.emit('open');
+    }
+    await vi.waitFor(() => expect(headers).toHaveBeenCalledTimes(3));
+
+    disposeA?.();
+    disposeB?.();
+    disposeC?.();
+    expect(source.closed).toBe(true);
+    pendingHeaders.resolve({});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(handlers.onError).not.toHaveBeenCalled();
+
+    const disposeNext = transport.subscribeById?.(
+      'Post',
+      '4',
+      new Set(['id']),
+      undefined,
+      handlers,
+    );
+    MockEventSource.instances[1]!.emit('open');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    expect(MockEventSource.instances[1]!.closed).toBe(false);
+    disposeNext?.();
+  },
+);
+
+test.each([
+  { closed: false, failure: 'response' },
+  { closed: false, failure: 'network' },
+  { closed: true, failure: 'response' },
+  { closed: true, failure: 'network' },
+] as const)(
+  'handles native control $failure failures with closed=$closed',
+  async ({ closed, failure }) => {
+    const pendingResponse = Promise.withResolvers<Response>();
+    const fetch = liveControlFetch();
+    const transport = createHTTPTransport({
+      eventSource: resetMockEventSource(),
+      fetch,
+      url: 'http://local/fate',
+    });
+    const handlers = { onData: vi.fn(), onError: vi.fn() };
+    const disposeA = transport.subscribeById?.('Post', '1', new Set(['id']), undefined, handlers);
+    const disposeB = transport.subscribeById?.('Post', '2', new Set(['id']), undefined, handlers);
+    const source = await openLiveStream();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    fetch.mockImplementationOnce(() => pendingResponse.promise);
+    disposeA?.();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    if (closed) {
+      disposeB?.();
+    }
+    expect(source.closed).toBe(closed);
+
+    const nextHandlers = { onData: vi.fn(), onError: vi.fn() };
+    const disposeNext = transport.subscribeById?.(
+      'Post',
+      '3',
+      new Set(['id']),
+      undefined,
+      nextHandlers,
+    );
+    if (closed) {
+      MockEventSource.instances[1]!.emit('open');
+    }
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+
+    const message = 'Live connection not found.';
+    if (failure === 'response') {
+      pendingResponse.resolve(new Response(message, { status: 404 }));
+    } else {
+      pendingResponse.reject(new Error(message));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    if (closed) {
+      expect(handlers.onError).not.toHaveBeenCalled();
+      expect(nextHandlers.onError).not.toHaveBeenCalled();
+    } else {
+      await vi.waitFor(() => expect(nextHandlers.onError).toHaveBeenCalledTimes(1));
+      expect(handlers.onError).toHaveBeenCalledTimes(1);
+      expect(nextHandlers.onError).toHaveBeenCalledWith(expect.objectContaining({ message }));
+    }
+    disposeB?.();
+    disposeNext?.();
+  },
+);
 
 test('handles named native SSE live connection events emitted by the server', async () => {
   const fetch = vi.fn(async () =>
