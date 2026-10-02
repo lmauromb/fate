@@ -36,13 +36,11 @@ const props = withDefaults(
     action?: () => Promise<unknown> | unknown;
     class?: string;
     disabled?: boolean;
-    pendingPlaceholder?: string;
     size?: ButtonVariants['size'];
     type?: 'button' | 'submit';
     variant?: ButtonVariants['variant'];
   }>(),
   {
-    pendingPlaceholder: '...',
     type: 'button',
   },
 );
@@ -68,7 +66,6 @@ const onClick = async () => {
 
 <template>
   <button :class="classes" :disabled="disabled || isPending" :type="type" @click="onClick">
-    <span v-if="isPending">{{ pendingPlaceholder }}</span>
-    <slot v-else />
+    <slot />
   </button>
 </template>
