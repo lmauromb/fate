@@ -1,8 +1,0 @@
-node_modules/
-dist/
-.void/
-.wrangler/
-.env
-.env.*
-*.tsbuildinfo
-vite.config.ts.timestamp-*

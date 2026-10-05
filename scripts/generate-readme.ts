@@ -55,6 +55,11 @@ for (const file of files) {
     );
   }
 
+  content = content.replaceAll(
+    /href="\/(guide|integrations)\/([^"#]+)(#[^"]+)?"/g,
+    'href="/docs/$1/$2.md$3"',
+  );
+
   segments.push(shiftHeadings(stripFrontmatter(content).trim()));
 }
 

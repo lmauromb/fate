@@ -1,21 +1,89 @@
-@import '@fontsource/fira-code';
+@font-face {
+  font-family: 'SalesforceSans';
+  src: url('/fonts/salesforce/SalesforceSans-Book.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'SalesforceSans';
+  src: url('/fonts/salesforce/SalesforceSans-Semibold.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500 800;
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  src: url('/fonts/firacode/FiraCode-Regular.woff2') format('woff2');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
 
 :root {
+  color-scheme: light;
+  --vp-font-family-base: 'SalesforceSans', system-ui, -apple-system, sans-serif;
+  --vp-font-family-mono: 'Fira Code', monospace;
+  --background-color: #fff;
+  --background-color-layer: #fff;
+  --card-background: #ffffff80;
+  --text-color: #111;
+  --text-muted: #62656c;
+  --border-color: #e5e7eb;
+  --subtle-border: #e9eaf0;
+  --link-color: #256bd3;
+  --shadow: #0000000d;
+  --blue: #256bd3;
+  --purple: #7842b8;
+  --pink: #b23985;
   --vp-button-alt-hover-text: #111;
-  --vp-c-brand-1: rgb(61, 135, 245);
-  --vp-code-color: #111;
-  --vp-home-hero-name-color: #c8c8c8;
-  --vp-nav-bg-color: rgba(255, 255, 255, 0.6);
-  --vp-post-headline: #111;
+  --vp-c-bg: var(--background-color);
+  --vp-c-bg-alt: #f6f6f7;
+  --vp-c-bg-elv: var(--background-color-layer);
+  --vp-c-bg-soft: #f6f6f7;
+  --vp-c-brand-1: var(--link-color);
+  --vp-c-brand-2: #3d87f5;
+  --vp-c-brand-3: #256bd3;
+  --vp-c-divider: var(--border-color);
+  --vp-c-text-1: var(--text-color);
+  --vp-c-text-2: var(--text-muted);
+  --vp-code-color: var(--text-color);
+  --vp-nav-bg-color: #ffffff99;
+  --vp-post-headline: var(--text-color);
 }
 
 html.dark {
+  color-scheme: dark;
+  --background-color: #141414;
+  --background-color-layer: #262626;
+  --card-background: #26262680;
+  --text-color: #e6e6e6;
+  --text-muted: #a6a6b0;
+  --border-color: #525252;
+  --subtle-border: #333;
+  --link-color: #5e9fff;
+  --shadow: #ffffff03;
+  --blue: #80b6ff;
+  --purple: #c8a3f2;
+  --pink: #efa0ce;
   --vp-button-alt-hover-text: #fff;
-  --vp-c-brand-1: rgb(94 159 255);
-  --vp-code-color: #c8c8c8;
-  --vp-home-hero-name-color: #c8c8c8;
-  --vp-nav-bg-color: rgba(24, 24, 24, 0.6);
-  --vp-post-headline: #fff;
+  --vp-c-bg-alt: #1c1c1c;
+  --vp-c-bg-soft: #262626;
+  --vp-c-brand-2: #80b6ff;
+  --vp-c-brand-3: #3d87f5;
+  --vp-nav-bg-color: #14141499;
+}
+
+html {
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--vp-nav-height) + 32px);
+}
+
+::selection {
+  background: #3d87f540;
 }
 
 .VPNavBar {
@@ -26,9 +94,30 @@ html.dark {
   backdrop-filter: unset;
 }
 
+.VPNavBarTitle .title span {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 32px;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.fate-home .VPNavBarAppearance,
+.fate-home .VPNavScreenAppearance,
+.fate-home .VPNavBarExtra {
+  display: none;
+}
+
+.fate-home .VPContent {
+  overflow-x: clip;
+}
+
+.fate-home .VPHome {
+  margin-bottom: 0;
+}
+
 code,
 pre {
-  font-family: 'Fira Code', monospace;
+  font-family: var(--vp-font-family-mono);
   font-feature-settings:
     'liga' on,
     'calt' on;
@@ -38,173 +127,44 @@ pre {
   text-decoration: none;
 }
 
+.vp-doc div[class*='language-'],
+.vp-doc .custom-block,
+.VPLocalSearchBox .shell {
+  border-radius: 32px;
+  corner-shape: squircle;
+}
+
 .VPSocialLink[href='https://nakazawa.tech'] svg {
   transform: scale(1.3);
 }
 
-@media (min-width: 640px) {
-  .VPHome .VPHero {
-    padding-bottom: 42px;
-  }
+.fate-highlights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0 32px;
 }
 
-.VPHome.VPHome {
-  margin-bottom: 0;
+.fate-highlights article {
+  padding: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 32px;
+  corner-shape: squircle;
+  background: var(--card-background);
+  box-shadow:
+    0 4px 6px -1px var(--shadow),
+    0 2px 4px -2px var(--shadow);
 }
 
-.fate-home-rotator {
-  display: none;
+.fate-highlights h3 {
+  margin: 0;
+  font-size: 18px;
 }
 
-.fate-home-word {
-  display: inline-grid;
-  min-width: 5.35ch;
-  overflow: hidden;
-  vertical-align: bottom;
-}
-
-.fate-home-word-reduced {
-  min-width: 12.5ch;
-  overflow: visible;
-}
-
-.fate-home-word-current,
-.fate-home-word-next {
-  grid-area: 1 / 1;
-  transition:
-    filter 260ms ease,
-    opacity 260ms ease,
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.fate-home-word-settling .fate-home-word-current,
-.fate-home-word-settling .fate-home-word-next {
-  transition: none;
-}
-
-.fate-home-word-next {
-  opacity: 0;
-  transform: translateY(80%) skewY(4deg);
-}
-
-.fate-home-word-swapping .fate-home-word-current {
-  filter: blur(2px);
-  opacity: 0;
-  transform: translateY(-80%) skewY(-4deg);
-}
-
-.fate-home-word-swapping .fate-home-word-next {
-  opacity: 1;
-  transform: translateY(0) skewY(0);
-}
-
-.VPFeatures .VPFeature {
-  position: relative;
-}
-
-.VPFeatures .VPFeature .fate-home-feature-content,
-.VPFeatures .VPFeature .fate-home-feature-ghost {
-  transition:
-    filter 260ms ease,
-    opacity 260ms ease,
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.VPFeatures .VPFeature .fate-home-feature-ghost {
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.VPFeatures .VPFeature.fate-home-feature-settling .fate-home-feature-content {
-  transition: none;
-}
-
-.VPFeatures .VPFeature.fate-home-feature-in .fate-home-feature-content {
-  filter: blur(1px);
-  opacity: 0.32;
-}
-
-.VPFeatures .VPFeature.fate-home-feature-out .fate-home-feature-ghost {
-  filter: blur(2px);
-  opacity: 0;
-}
-
-.VPFeatures .VPFeature.fate-home-feature-in .fate-home-feature-content {
-  transform: translateY(6px);
-}
-
-.VPFeatures .VPFeature.fate-home-feature-out .fate-home-feature-ghost {
-  transform: translateY(-6px);
-}
-
-.VPHero .container .main {
-  order: 2;
-}
-
-.VPHero .container .image {
-  order: 1;
-}
-
-.VPHero .VPButton.medium {
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.15));
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-.VPFeature.VPLink {
-  background-color: rgba(175, 175, 175, 0.15);
-  backdrop-filter: blur(12px);
-}
-
-.VPFeature.VPLink .icon {
-  border-radius: 24px;
-  margin-bottom: 8px;
-}
-
-.VPFeature.VPLink .link-text {
-  padding-left: 12px;
-  padding-bottom: 8px;
-}
-
-.VPHero .VPButton.medium {
-  border-radius: 24px;
-  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.VPHero .VPButton.medium:hover {
-  transform: scale(1.05, 1.025);
-}
-
-.VPHero .VPButton.medium:active {
-  transform: scale(0.975, 0.95);
-}
-
-.VPHero .heading {
-  font-style: italic;
-}
-
-.VPFeature.VPLink.VPLink {
-  border-radius: 24px;
-  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.VPFeature.VPLink:hover {
-  transform: scale(1.03);
-}
-
-.VPFeature.VPLink:active {
-  transform: scale(0.97);
-}
-
-.VPFeature.VPLink .box {
-  padding: 12px;
-}
-
-h2[id='why-fate'] {
-  border-top: 0;
-  margin-top: 12px;
+.fate-highlights p {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 picture.fetch-tree > img {
@@ -237,6 +197,7 @@ html.dark picture.fate-logo > img {
   margin-top: 12px;
   padding-top: 0;
 }
+
 .vp-doc[class^='_posts_'] h2 a.header-anchor,
 .vp-doc[class*=' _posts_'] h2 a.header-anchor {
   top: 0;
@@ -248,14 +209,14 @@ footer.VPFooter.VPFooter {
   padding-top: 36px;
 }
 
-@supports (corner-shape: squircle) {
-  .VPFeature.VPLink .icon.icon,
-  .VPFeature.VPLink.VPLink {
-    border-radius: 48px;
-    corner-shape: squircle;
+@media (max-width: 640px) {
+  .fate-highlights {
+    grid-template-columns: 1fr;
   }
+}
 
-  .VPHero .VPButton.medium.medium {
-    corner-shape: squircle;
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }

@@ -49,7 +49,7 @@ export default function Header() {
                 <span className="italic">fate</span>
               </span>
               <p className="hidden text-xs text-muted-foreground sm:block">
-                A modern data client for React.
+                A modern data client for the web.
               </p>
             </div>
           </Stack>

@@ -699,7 +699,6 @@ const configureVueReadme = (targetPath, selectedVariant) => {
         `vp create fate -- --template ${selectedVariant}`,
         `vp create fate -- --template ${selectedVariant} --framework vue`,
       )
-      .replaceAll('modern data client for React', 'modern data client for Vue')
       .replaceAll(
         'data masking, Async React features, and',
         'data masking, Vue-native composables, and',

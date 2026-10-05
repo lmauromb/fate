@@ -26,7 +26,7 @@ React data fetching is still largely centered around requests. Components fetch 
 
 _fate_ takes a different approach: Instead of caching requests, _fate_ caches normalized objects, shifts thinking to what data is required, and composes declarative view requirements into a single request at the application root. This enables precise optimistic updates, efficient live subscriptions, predictable cache behavior, and deep integration with modern Async React features through a minimal, composable API.
 
-Check out the [initial announcement](/posts/introducing-fate#a-modern-data-client-for-react-trpc) if you'd like to learn more about why _fate_ exists!
+Check out the [initial announcement](/posts/introducing-fate#a-modern-data-client-for-the-web) if you'd like to learn more about why _fate_ exists!
 
 ## How does _fate_ work?
 

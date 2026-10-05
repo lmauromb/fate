@@ -202,9 +202,6 @@ importers:
 
   .:
     devDependencies:
-      '@fontsource/fira-code':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@nkzw/eslint-plugin':
         specifier: ^2.0.0
         version: 2.0.0(eslint@9.39.3(jiti@2.7.0)(supports-color@10.2.2))
@@ -889,79 +886,6 @@ importers:
       vue:
         specifier: ^3.5.43
         version: 3.5.43(typescript@7.0.2)
-
-  sites/stack:
-    dependencies:
-      '@nkzw/stack':
-        specifier: ^2.3.2
-        version: 2.3.2(react@19.3.0)
-      '@paper-design/shaders':
-        specifier: 0.0.81
-        version: 0.0.81
-      '@void/react':
-        specifier: ^0.21.2
-        version: 0.21.2(45303363150a8a95cd75cfab9027f3e0)
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      react:
-        specifier: 'catalog:'
-        version: 19.3.0
-      react-dom:
-        specifier: 'catalog:'
-        version: 19.3.0(react@19.3.0)
-      tailwind-merge:
-        specifier: ^3.7.0
-        version: 3.7.0
-      void:
-        specifier: ^0.21.2
-        version: 0.21.2(@electric-sql/pglite@0.4.3)(@prisma/client@7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(typescript@7.0.2))(@types/node@26.6.3)(@types/pg@8.23.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(arktype@2.2.3)(kysely@0.28.17)(postgres@3.4.7)(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(better-sqlite3@13.0.3)(magicast@0.5.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(valibot@1.4.2(typescript@7.0.2))(vitest@5.0.2)(vue@3.5.42(typescript@7.0.2))(wrangler@4.142.0(@cloudflare/workers-types@5.20260904.1)(@types/node@26.6.3))(zod@4.6.5)
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: 5.20260904.1
-        version: 5.20260904.1
-      '@hono/node-server':
-        specifier: ^2.1.1
-        version: 2.1.1(hono@4.13.10)
-      '@nkzw/eslint-plugin':
-        specifier: ^2.0.0
-        version: 2.0.0(eslint@9.39.3(jiti@2.7.0)(supports-color@10.2.2))
-      '@nkzw/oxlint-config':
-        specifier: ^2.0.1
-        version: 2.0.1(eslint@9.39.3(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.85.0(oxlint-tsgolint@7.0.2001)(vite-plus@1.0.0(@types/node@26.6.3)(@vitest/coverage-v8@5.0.2)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)))(supports-color@10.2.2)(typescript@7.0.2)
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))
-      '@types/node':
-        specifier: ^26.6.3
-        version: 26.6.3
-      '@types/react':
-        specifier: 'catalog:'
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: 'catalog:'
-        version: 19.3.0(@types/react@19.3.0)
-      '@vitejs/plugin-react':
-        specifier: ^6.1.1
-        version: 6.1.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.151.0)
-      oxc-transform-react:
-        specifier: ^0.151.0
-        version: 0.151.0
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vite:
-        specifier: 'catalog:'
-        version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)'
-      vite-plus:
-        specifier: 'catalog:'
-        version: 1.0.0(@types/node@26.6.3)(@vitest/coverage-v8@5.0.2)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(tsx@4.23.13)(typescript@7.0.2)(yaml@2.9.1)
-      wrangler:
-        specifier: 4.142.0
-        version: 4.142.0(@cloudflare/workers-types@5.20260904.1)(@types/node@26.6.3)
 
 packages:
 
@@ -1917,9 +1841,6 @@ packages:
 
   '@fastify/busboy@3.2.2':
     resolution: {integrity: sha512-yXSS27qPExaXeuLvMRMXOLtpipzfQYNjG3FkunDWKGfMYjKuhFXko9CVzqxm8jcF+lmtS9Fd89QNdh9XDjnbNg==}
-
-  '@fontsource/fira-code@5.3.0':
-    resolution: {integrity: sha512-EJL968RJRkakubAj/coU8pSUaeTE5UNoRjtzAr6kGiSZ3jWuN8/AKWHwym/PFUaQL1q7IL/H+EXs4358YhrTBQ==}
 
   '@gerrit0/mini-shiki@3.23.0':
     resolution: {integrity: sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg==}
@@ -7088,8 +7009,6 @@ snapshots:
       levn: 0.4.1
 
   '@fastify/busboy@3.2.2': {}
-
-  '@fontsource/fira-code@5.3.0': {}
 
   '@gerrit0/mini-shiki@3.23.0':
     dependencies:

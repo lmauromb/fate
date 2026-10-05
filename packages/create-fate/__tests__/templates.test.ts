@@ -277,10 +277,12 @@ describe('create-fate templates', () => {
         const agents = readFileSync(join(target, 'AGENTS.md'), 'utf8');
         const readme = readFileSync(join(target, 'README.md'), 'utf8');
 
-        expect.soft(packageJson.description, templateName).toContain('Vue');
-        expect.soft(packageJson.description, templateName).not.toContain('React');
-        expect.soft(rootPackageJson.description, templateName).toContain('Vue');
-        expect.soft(rootPackageJson.description, templateName).not.toContain('React');
+        expect
+          .soft(packageJson.description, templateName)
+          .toBe('fate is a modern data client for the web.');
+        expect
+          .soft(rootPackageJson.description, templateName)
+          .toBe('fate is a modern data client for the web.');
         expect.soft(dependencies, templateName).toHaveProperty('vue');
         expect.soft(dependencies['vue-fate'], templateName).toBe('^4.5.6');
         expect.soft(dependencies, templateName).toHaveProperty('@void/vue');

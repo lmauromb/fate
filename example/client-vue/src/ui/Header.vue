@@ -49,7 +49,7 @@ const signOut = async () => {
               <span class="italic">fate</span>
             </span>
             <p class="hidden text-xs text-muted-foreground sm:block">
-              A modern data client for Vue.
+              A modern data client for the web.
             </p>
           </div>
         </div>

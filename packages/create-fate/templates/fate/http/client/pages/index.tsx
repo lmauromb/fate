@@ -63,7 +63,7 @@ export default function HomePage() {
           <div className="space-y-3">
             <h1 className="text-3xl leading-tight font-semibold text-balance lg:text-4xl">
               <fbt desc="Description of fate">
-                fate is a modern data client for React inspired by Relay and GraphQL.
+                fate is a modern data client for the web inspired by Relay and GraphQL.
               </fbt>
             </h1>
             <p className="text-sm text-white/80 lg:text-base">

@@ -2,7 +2,7 @@
   "name": "@app/client",
   "version": "0.0.1",
   "private": true,
-  "description": "fate is a modern data client for Vue.",
+  "description": "fate is a modern data client for the web.",
   "author": "Christoph Nakazawa <christoph.pojer@gmail.com>",
   "repository": {
     "type": "git",

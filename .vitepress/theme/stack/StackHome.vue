@@ -1,6 +1,8 @@
-import CreateProject from '../components/CreateProject.tsx';
-import ProjectCard, { type Project } from '../components/ProjectCard.tsx';
-import StackShaders from '../components/StackShaders.tsx';
+<script setup lang="ts">
+import CreateProject from './CreateProject.vue';
+import ProjectCard, { type Project } from './ProjectCard.vue';
+import StackShaders from './StackShaders.vue';
+import './stack.css';
 
 const layers: ReadonlyArray<
   Readonly<{
@@ -13,9 +15,9 @@ const layers: ReadonlyArray<
     name: 'Application',
     projects: [
       {
-        description: 'A modern data client for React.',
+        description: 'A modern data client for the web.',
         domain: 'fate.technology',
-        href: 'https://fate.technology',
+        href: '/guide/why-fate',
         name: 'fate',
         tone: 'blue',
         type: 'data',
@@ -168,54 +170,41 @@ const layers: ReadonlyArray<
     ],
   },
 ];
+</script>
 
-export default function HomeRoute() {
-  return (
-    <div className="site-container">
-      <main>
-        <section aria-labelledby="hero-title" className="hero">
-          <h1 id="hero-title">
-            <i>fate</i>stack<span>.</span>
-          </h1>
-          <p className="hero-tagline">Great tools, all the way down.</p>
-          <CreateProject />
-        </section>
-        <section aria-labelledby="stack-title" className="stack" id="stack">
-          <h1 className="stack-title" id="stack-title">
-            Explore the stack
-          </h1>
-          {layers.map(({ name, note, projects }, index) => (
-            <section aria-labelledby={`layer-${index}`} className="stack-layer" key={name}>
-              <div className="layer-heading">
-                <h2 id={`layer-${index}`}>{name}</h2>
-                {note ? <span className="layer-note">{note}</span> : null}
-              </div>
-              <div className={`project-grid shader-grid columns-${Math.min(projects.length, 3)}`}>
-                {projects.map((project) => (
-                  <ProjectCard {...project} key={project.name} />
-                ))}
-                <StackShaders
-                  count={projects.length}
-                  seedOffset={
-                    1 +
-                    layers
-                      .slice(0, index)
-                      .reduce((count, layer) => count + layer.projects.length, 0)
-                  }
-                />
-              </div>
-            </section>
-          ))}
-        </section>
-      </main>
-      <footer className="site-footer">
-        <p>
-          Curated by{' '}
-          <a href="https://nakazawa.tech">
-            Nakazawa Tech <span aria-hidden="true">↗</span>
-          </a>
-        </p>
-      </footer>
-    </div>
-  );
-}
+<template>
+  <main class="fate-stack site-container">
+    <section aria-labelledby="hero-title" class="hero">
+      <h1 id="hero-title"><i class="fate-name">fate</i></h1>
+      <p class="hero-tagline">
+        <span>A modern data client for the web.</span>
+        <a class="hero-get-started" href="/guide/getting-started">Get Started →</a>
+      </p>
+      <CreateProject />
+    </section>
+    <section aria-labelledby="stack-title" class="stack" id="stack">
+      <h2 class="stack-title" id="stack-title">Explore the <i class="fate-name">fate</i>stack</h2>
+      <p class="stack-tagline">Great tools, all the way down.</p>
+      <section
+        v-for="({ name, note, projects }, index) in layers"
+        :key="name"
+        :aria-labelledby="`layer-${index}`"
+        class="stack-layer"
+      >
+        <div class="layer-heading">
+          <h3 :id="`layer-${index}`">{{ name }}</h3>
+          <span v-if="note" class="layer-note">{{ note }}</span>
+        </div>
+        <div :class="`project-grid shader-grid columns-${Math.min(projects.length, 3)}`">
+          <ProjectCard v-for="project in projects" :key="project.name" v-bind="project" />
+          <StackShaders
+            :count="projects.length"
+            :seed-offset="
+              1 + layers.slice(0, index).reduce((count, layer) => count + layer.projects.length, 0)
+            "
+          />
+        </div>
+      </section>
+    </section>
+  </main>
+</template>

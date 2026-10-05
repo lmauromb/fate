@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-**_fate_** is a modern data client for React inspired by [Relay](https://relay.dev/) and [GraphQL](https://graphql.org/). It combines view composition, normalized caching, data masking, Async React features, and type-safe data fetching.
+**_fate_** is a modern data client for the web inspired by [Relay](https://relay.dev/) and [GraphQL](https://graphql.org/). It combines view composition, normalized caching, data masking, Async React features, and type-safe data fetching.
 
 ### Features
 
@@ -21,7 +21,7 @@
 - **Live Views:** fate can keep individual view refs up to date through a single native Server-Sent Events stream, merging updates into the normalized cache.
 - **AI-Ready:** fate's minimal, predictable API and explicit data selection enable local reasoning, enabling humans and AI tools to generate stable, type-safe data-fetching code.
 
-### A modern data client for React
+### A modern data client for the web
 
 **_fate_** is designed to make data fetching and state management in React applications more composable, declarative, and predictable. The framework has a minimal API, no DSL, and no magic—_it's just JavaScript_.
 
@@ -60,6 +60,8 @@ _[Learn more](/docs/guide/getting-started.md) about fate's core concepts or crea
 
 ## Getting Started
 
+Create a new fate app from a template, or install it in an existing React or Vue project. For an overview of the ideas behind fate, read [Why fate?](/docs/guide/why-fate.md).
+
 ### Template
 
 Create a new fate app with Vite+:
@@ -68,7 +70,7 @@ Create a new fate app with Vite+:
 vp create fate
 ```
 
-Explore the [fate stack](https://stack.fate.technology) to see the tools included in your new project.
+Explore the [fate stack](https://fate.technology/#stack) to see the tools included in your new project.
 
 The template selector can create a React or Vue client for a Void app with Drizzle, a tRPC app with Drizzle or Prisma, a GraphQL app with Prisma, or a fate client for an existing GraphQL server. React is the default UI framework; pass `--framework vue` or choose Vue in the template selector to create a Vue app. The template sources live in the fate repo under [`packages/create-fate/templates/fate`](https://github.com/nkzw-tech/fate/tree/main/packages/create-fate/templates/fate). They feature modern tools to deliver an incredibly fast development experience.
 
