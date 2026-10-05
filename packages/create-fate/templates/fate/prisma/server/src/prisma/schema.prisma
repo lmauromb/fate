@@ -36,15 +36,16 @@ model User {
 }
 
 model Session {
-  id        String   @unique @default(uuid(7))
-  expiresAt DateTime
-  token     String
-  createdAt DateTime
-  updatedAt DateTime
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @unique @default(uuid(7))
+  expiresAt      DateTime
+  token          String
+  createdAt      DateTime
+  updatedAt      DateTime
+  impersonatedBy String?
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
   @@map("session")
@@ -54,7 +55,6 @@ model Account {
   id                    String    @unique @default(uuid(7))
   accountId             String
   providerId            String
-  issuer                String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
@@ -67,8 +67,20 @@ model Account {
   createdAt             DateTime
   updatedAt             DateTime
 
-  @@unique([issuer, accountId])
+  @@unique([providerId, accountId])
   @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid(7))
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
 
 model Post {
