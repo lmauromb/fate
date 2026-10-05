@@ -98,8 +98,8 @@ export default defineConfig({
       {
         items: [
           {
-            link: 'https://github.com/nkzw-tech/fate/blob/main/CHANGELOG.md',
-            text: 'Changelog',
+            link: 'https://github.com/nkzw-tech/fate/releases',
+            text: 'Releases',
           },
           {
             link: 'https://github.com/nkzw-tech/fate/blob/main/CONTRIBUTING.md',
