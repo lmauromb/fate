@@ -30,7 +30,7 @@
     "@pothos/plugin-scope-auth": "^4.1.7",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "better-auth": "1.7.2",
+    "better-auth": "^1.7.7",
     "graphql": "^17.0.2",
     "graphql-yoga": "^5.22.0",
     "hono": "^4.13.5"
