@@ -1,6 +1,6 @@
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { type ButtonHTMLAttributes, type ReactNode, useOptimistic, useTransition } from 'react';
+import { type ButtonHTMLAttributes, useOptimistic, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import cx from '../lib/cx.tsx';
 
@@ -66,7 +66,6 @@ const AsyncButton = ({
   children,
   className,
   disabled,
-  pendingPlaceholder = '...',
   size,
   variant,
   ...props
@@ -74,7 +73,6 @@ const AsyncButton = ({
   VariantProps<typeof buttonVariants> & {
     action?: () => Promise<unknown> | unknown;
     asChild?: boolean;
-    pendingPlaceholder?: ReactNode;
   }) => {
   const Component = asChild ? Slot : 'button';
 
@@ -100,7 +98,7 @@ const AsyncButton = ({
       onClick={onClick}
       {...props}
     >
-      {isPending ? pendingPlaceholder : children}
+      {children}
     </Component>
   );
 };

@@ -1,3 +1,13 @@
+import { withAliasSupport } from './alias-transport.ts';
+import { responseField, schemaField } from './alias.ts';
+import { GraphQLRequestError, type GraphQLErrorPayload } from './graphql-error.ts';
+import {
+  graphQLOutputRelations,
+  validateGraphQLArguments,
+  validateGraphQLRefetchMappings,
+  type GraphQLArgumentSchema,
+  type GraphQLByIdConfig,
+} from './graphqlSchema.ts';
 import { isRecord } from './record.ts';
 import type { Transport } from './transport.ts';
 import type { AnyRecord, Entity, MutationShape, Pagination, TypeConfig } from './types.ts';
@@ -19,9 +29,27 @@ type EventSourceConstructor = new (
 
 type GraphQLRootConfig = {
   connection?: 'relay';
+  embedded?: boolean;
   field?: string;
   type: string;
 };
+
+export type GraphQLValueRootDefinition<Output = unknown, Input = unknown> = GraphQLRootConfig & {
+  readonly __fateGraphQLRoot?: { input: Input; output: Output };
+  embedded: true;
+};
+
+export type GraphQLRootInput<Definition> =
+  Definition extends GraphQLValueRootDefinition<infer _Output, infer Input> ? Input : never;
+export type GraphQLRootOutput<Definition> =
+  Definition extends GraphQLValueRootDefinition<infer Output, infer _Input> ? Output : never;
+
+export function graphqlValueRoot<Output, Input = Record<string, never>>(options: {
+  field?: string;
+  type: string;
+}): GraphQLValueRootDefinition<Output, Input> {
+  return Object.freeze({ ...options, embedded: true }) as GraphQLValueRootDefinition<Output, Input>;
+}
 
 export type GraphQLMutationDefinition<
   T extends Entity = Entity,
@@ -35,6 +63,7 @@ export type GraphQLMutationDefinition<
   entity: T['__typename'];
   field: string;
   inputArg?: false | string;
+  type?: string;
 }>;
 
 export type GraphQLMutationInput<Definition> =
@@ -57,6 +86,7 @@ type GraphQLMutationRuntimeConfig = {
   entity: string;
   field: string;
   inputArg?: false | string;
+  type?: string;
 };
 
 type GraphQLLiveOptions = {
@@ -69,6 +99,7 @@ type GraphQLLiveOptions = {
 export type GraphQLTransportOptions<
   Mutations extends TransportMutations = EmptyTransportMutations,
 > = {
+  byId?: Readonly<Record<string, GraphQLByIdConfig>>;
   decodeNodeId?: (type: string, id: string | number) => string | number;
   encodeNodeId?: (type: string, id: string | number) => string | number;
   eventSource?: EventSourceConstructor;
@@ -77,7 +108,9 @@ export type GraphQLTransportOptions<
   live?: boolean | GraphQLLiveOptions;
   mutateDurably?: Transport<Mutations>['mutateDurably'];
   mutations?: Record<Extract<keyof Mutations, string>, GraphQLMutationRuntimeConfig>;
+  nodes?: boolean;
   roots?: Record<string, GraphQLRootConfig>;
+  schema?: GraphQLArgumentSchema;
   types: ReadonlyArray<Omit<TypeConfig, 'getId'> & Partial<Pick<TypeConfig, 'getId'>>>;
   url: string | URL;
 };
@@ -87,12 +120,6 @@ type GraphQLResponse = {
   errors?: Array<GraphQLErrorPayload>;
 };
 
-type GraphQLErrorPayload = {
-  extensions?: AnyRecord;
-  message?: string;
-  path?: ReadonlyArray<number | string>;
-};
-
 type PendingOperation = {
   alias: string;
   kind: 'mutation' | 'query';
@@ -100,6 +127,7 @@ type PendingOperation = {
   resolve: (value: unknown) => void;
   selection: string;
   transform: (value: unknown) => unknown;
+  variables?: Record<string, { type: string; value: unknown }>;
 };
 
 type SelectionTree = Map<string, SelectionTree>;
@@ -165,7 +193,16 @@ type LiveConnectionPayload =
 
 const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
 
-const importGraphQLSSE = () => import('graphql-sse') as Promise<GraphQLSSEModule>;
+const importGraphQLSSE = async (): Promise<GraphQLSSEModule> => {
+  try {
+    return (await import('graphql-sse')) as GraphQLSSEModule;
+  } catch (error) {
+    throw new Error(
+      "fate(graphql): GraphQL live queries require the optional 'graphql-sse' package. Install it or pass live: false.",
+      { cause: error },
+    );
+  }
+};
 
 const normalizeEndpoint = (url: string | URL): string => String(url).replace(/\/$/, '');
 
@@ -212,30 +249,23 @@ const defaultDecodeNodeId = (type: string, id: string | number): string | number
   return id.startsWith(prefix) ? id.slice(prefix.length) : id;
 };
 
-const errorCodeFromGraphQL = (error: { extensions?: AnyRecord } | undefined) => {
-  const code = error?.extensions?.code;
-  return typeof code === 'string' ? code : 'INTERNAL_ERROR';
-};
-
 const responseError = async (response: Response): Promise<Error> => {
   let message = response.statusText || `HTTP ${response.status}`;
   try {
-    const payload = (await response.clone().json()) as GraphQLResponse;
-    if (payload.errors?.[0]?.message) {
-      message = payload.errors[0].message;
-    }
+    const payload = assertGraphQLResponse(await response.clone().json());
+    return new GraphQLRequestError(payload.errors ?? [], {
+      data: payload.data,
+      message,
+      status: response.status,
+    });
   } catch {
     try {
-      const text = await response.text();
-      if (text) {
-        message = text;
-      }
+      message = (await response.text()) || message;
     } catch {
-      // Keep the status text fallback.
+      // Keep the HTTP status fallback when the response body cannot be read.
     }
   }
-
-  return new Error(message);
+  return new GraphQLRequestError([], { message, status: response.status });
 };
 
 const assertGraphQLResponse = (value: unknown): GraphQLResponse => {
@@ -321,30 +351,38 @@ const getTypeConfig = (types: ReadonlyMap<string, TypeConfig>, type: string): Ty
 
 const rootArgsToGraphQL = ({
   args,
+  argumentsForField,
+  field,
+  schema,
   type,
   types,
 }: {
   args?: Record<string, unknown>;
+  argumentsForField: ArgumentsForField;
+  field: string;
+  schema?: GraphQLArgumentSchema;
   type: string;
   types: ReadonlyMap<string, TypeConfig>;
 }) => {
-  if (!args) {
-    return '';
+  if (schema) {
+    return argumentsForField(schema.queryType, field, args, type);
   }
-
+  if (type === '__value__' || ['Boolean', 'Int', 'Float', 'String', 'ID'].includes(type)) {
+    return argumentsForField('Query', field, args);
+  }
   const fields = getTypeConfig(types, type).fields ?? {};
   const rootArgs = Object.fromEntries(
-    Object.entries(args).filter(([key]) => {
-      const descriptor = fields[key];
+    Object.entries(args ?? {}).filter(([key]) => {
+      const descriptor = fields[schemaField(key)];
       return !(
         descriptor &&
         typeof descriptor === 'object' &&
-        ('listOf' in descriptor || 'type' in descriptor)
+        ('listOf' in descriptor || 'type' in descriptor || 'embedded' in descriptor)
       );
     }),
   );
 
-  return argsToGraphQL(rootArgs);
+  return argumentsForField('Query', field, rootArgs);
 };
 
 const buildSelectionTree = (select: Iterable<string>): SelectionTree => {
@@ -369,14 +407,25 @@ const buildSelectionTree = (select: Iterable<string>): SelectionTree => {
   return root;
 };
 
+type ArgumentsForField = (
+  type: string,
+  field: string,
+  args?: Record<string, unknown>,
+  resultType?: string,
+) => string;
+
 const buildRecordSelection = ({
   args,
+  argumentsForField,
+  embedded,
   path,
   select,
   type,
   types,
 }: {
   args?: Record<string, unknown>;
+  argumentsForField: ArgumentsForField;
+  embedded?: boolean;
   path: string;
   select: Iterable<string>;
   type: string;
@@ -384,9 +433,14 @@ const buildRecordSelection = ({
 }): string => {
   const tree = buildSelectionTree(select);
 
-  const walk = (currentType: string, currentTree: SelectionTree, currentPath: string): string => {
+  const walk = (
+    currentType: string,
+    currentTree: SelectionTree,
+    currentPath: string,
+    embedded = false,
+  ): string => {
     const config = getTypeConfig(types, currentType);
-    const fields = new Set([...currentTree.keys(), 'id', '__typename']);
+    const fields = new Set([...currentTree.keys(), ...(embedded ? [] : ['id', '__typename'])]);
     const lines: Array<string> = [];
 
     for (const field of [...fields].sort()) {
@@ -396,24 +450,50 @@ const buildRecordSelection = ({
       }
 
       const childTree = currentTree.get(field) ?? new Map();
-      const descriptor = config.fields?.[field];
+      const sourceField = schemaField(field);
+      const descriptor = config.fields?.[sourceField];
       const fieldPath = currentPath ? `${currentPath}.${field}` : field;
-      const fieldName = assertIdentifier(field, 'field');
+      const fieldName = field.includes(':')
+        ? `${assertIdentifier(responseField(field), 'alias')}: ${assertIdentifier(sourceField, 'field')}`
+        : assertIdentifier(field, 'field');
+      const resultType =
+        descriptor && typeof descriptor === 'object'
+          ? 'type' in descriptor
+            ? descriptor.type
+            : 'embedded' in descriptor
+              ? descriptor.embedded
+              : descriptor.listOf
+          : undefined;
+      const fieldArguments = argumentsForField(
+        currentType,
+        sourceField,
+        getArgsAtPath(args, fieldPath),
+        resultType,
+      );
 
       if (descriptor && typeof descriptor === 'object' && 'type' in descriptor) {
         lines.push(
-          `${fieldName}${argsToGraphQL(getArgsAtPath(args, fieldPath))} { ${walk(
-            descriptor.type,
-            childTree,
-            fieldPath,
-          )} }`,
+          `${fieldName}${fieldArguments} { ${walk(descriptor.type, childTree, fieldPath)} }`,
+        );
+        continue;
+      }
+
+      if (descriptor && typeof descriptor === 'object' && 'embedded' in descriptor) {
+        lines.push(
+          `${fieldName}${fieldArguments} { ${walk(descriptor.embedded, childTree, fieldPath, true)} }`,
         );
         continue;
       }
 
       if (descriptor && typeof descriptor === 'object' && 'listOf' in descriptor) {
+        if (descriptor.array) {
+          lines.push(
+            `${fieldName}${fieldArguments} { ${walk(descriptor.listOf, childTree, fieldPath)} }`,
+          );
+          continue;
+        }
         lines.push(
-          `${fieldName}${argsToGraphQL(getArgsAtPath(args, fieldPath))} { edges { cursor node { ${walk(
+          `${fieldName}${fieldArguments} { edges { cursor node { ${walk(
             descriptor.listOf,
             childTree,
             fieldPath,
@@ -422,25 +502,26 @@ const buildRecordSelection = ({
         continue;
       }
 
-      lines.push(fieldName);
+      lines.push(`${fieldName}${fieldArguments}`);
     }
 
     return lines.join(' ');
   };
 
-  return walk(type, tree, path);
+  return walk(type, tree, path, embedded);
 };
 
 const relayToFateConnection = (value: unknown) => {
-  if (!isRecord(value) || !Array.isArray(value.edges)) {
+  if (!isRecord(value) || (value.edges !== null && !Array.isArray(value.edges))) {
     return value;
   }
 
   const pageInfo = isRecord(value.pageInfo) ? value.pageInfo : {};
+  const edges = Array.isArray(value.edges) ? value.edges : [];
 
   return {
-    items: value.edges.flatMap((edge) =>
-      isRecord(edge)
+    items: edges.flatMap((edge) =>
+      isRecord(edge) && edge.node != null
         ? [
             {
               cursor: typeof edge.cursor === 'string' ? edge.cursor : undefined,
@@ -460,17 +541,21 @@ const relayToFateConnection = (value: unknown) => {
 
 const normalizeGraphQLValue = ({
   decodeNodeId,
+  selection,
   type,
   types,
   value,
 }: {
   decodeNodeId: (type: string, id: string | number) => string | number;
+  selection?: SelectionTree;
   type?: string;
   types: ReadonlyMap<string, TypeConfig>;
   value: unknown;
 }): unknown => {
   if (Array.isArray(value)) {
-    return value.map((entry) => normalizeGraphQLValue({ decodeNodeId, types, value: entry }));
+    return value.map((entry) =>
+      normalizeGraphQLValue({ decodeNodeId, selection, type, types, value: entry }),
+    );
   }
 
   const connection = relayToFateConnection(value);
@@ -483,7 +568,7 @@ const normalizeGraphQLValue = ({
       ...connectionRecord,
       items: connectionRecord.items.map((entry) => ({
         ...entry,
-        node: normalizeGraphQLValue({ decodeNodeId, types, value: entry.node }),
+        node: normalizeGraphQLValue({ decodeNodeId, selection, type, types, value: entry.node }),
       })),
     };
   }
@@ -496,24 +581,42 @@ const normalizeGraphQLValue = ({
   const config = typename ? types.get(typename) : undefined;
   const result: AnyRecord = {};
 
-  for (const [key, entry] of Object.entries(value)) {
-    if (key === 'id' && typename && (typeof entry === 'string' || typeof entry === 'number')) {
-      result.id = decodeNodeId(typename, entry);
+  for (const [responseKey, entry] of Object.entries(value)) {
+    const key =
+      [...(selection?.keys() ?? [])].find((field) => responseField(field) === responseKey) ??
+      responseKey;
+    const childSelection = selection?.get(key);
+    if (
+      schemaField(key) === 'id' &&
+      typename &&
+      (typeof entry === 'string' || typeof entry === 'number')
+    ) {
+      result[key] = decodeNodeId(typename, entry);
       continue;
     }
 
-    const descriptor = config?.fields?.[key];
-    if (descriptor && typeof descriptor === 'object' && 'type' in descriptor) {
+    const descriptor = config?.fields?.[schemaField(key)];
+    if (
+      descriptor &&
+      typeof descriptor === 'object' &&
+      ('type' in descriptor || 'embedded' in descriptor)
+    ) {
       result[key] = normalizeGraphQLValue({
         decodeNodeId,
-        type: descriptor.type,
+        selection: childSelection,
+        type: 'type' in descriptor ? descriptor.type : descriptor.embedded,
         types,
         value: entry,
       });
       continue;
     }
 
-    result[key] = normalizeGraphQLValue({ decodeNodeId, types, value: entry });
+    result[key] = normalizeGraphQLValue({
+      decodeNodeId,
+      selection: childSelection,
+      types,
+      value: entry,
+    });
   }
 
   return result;
@@ -524,14 +627,16 @@ const graphQLRequest = async ({
   headers,
   query,
   url,
+  variables,
 }: {
   fetchImpl: FetchLike;
   headers: HeadersFactory | undefined;
   query: string;
   url: string;
+  variables?: Record<string, unknown>;
 }) => {
   const response = await fetchImpl(url, {
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, variables }),
     headers: await requestHeaders({ 'content-type': 'application/json' }, headers),
     method: 'POST',
   });
@@ -545,12 +650,8 @@ const graphQLRequest = async ({
   return {
     data: isRecord(payload.data) ? payload.data : {},
     errors: payload.errors ?? [],
+    status: response.status,
   };
-};
-
-const graphQLError = (error: GraphQLErrorPayload | undefined): Error => {
-  const code = errorCodeFromGraphQL(error);
-  return new Error(error?.message ?? `GraphQL ${code}`);
 };
 
 const reportExecutionError = (
@@ -561,7 +662,7 @@ const reportExecutionError = (
     return false;
   }
 
-  handlers.onError?.(new Error(result.errors[0]?.message ?? 'GraphQL subscription error.'));
+  handlers.onError?.(new GraphQLRequestError(result.errors));
   return true;
 };
 
@@ -576,9 +677,22 @@ export function graphqlMutation<T extends Entity, Input, Output>(
   }) as GraphQLMutationDefinition<T, Input, Output>;
 }
 
+export function graphqlValueMutation<Input, Output>(options: {
+  field: string;
+  inputArg?: false | string;
+  type?: string;
+}): GraphQLMutationDefinition<{ __typename: '__value__' }, Input, Output> {
+  return Object.freeze({ entity: '__value__', ...options }) as GraphQLMutationDefinition<
+    { __typename: '__value__' },
+    Input,
+    Output
+  >;
+}
+
 export function createGraphQLTransport<
   Mutations extends TransportMutations = EmptyTransportMutations,
 >({
+  byId,
   decodeNodeId = defaultDecodeNodeId,
   encodeNodeId = defaultEncodeNodeId,
   fetch: fetchImpl = defaultFetch,
@@ -586,13 +700,67 @@ export function createGraphQLTransport<
   live = true,
   mutateDurably,
   mutations,
+  nodes = true,
   roots,
+  schema,
   types: typeConfigs,
   url,
 }: GraphQLTransportOptions<Mutations>): Transport<Mutations> {
+  validateGraphQLRefetchMappings(byId, schema);
   const endpoint = normalizeEndpoint(url);
-  const types = new Map(typeConfigs.map((type) => [type.type, type as TypeConfig]));
+  const types = new Map<string, TypeConfig>(
+    graphQLOutputRelations(schema).map((type) => [
+      type.type,
+      { ...type, getId: (record: unknown) => (record as { id: string }).id },
+    ]),
+  );
+  for (const config of typeConfigs) {
+    const inferred = types.get(config.type);
+    types.set(config.type, {
+      ...inferred,
+      ...config,
+      fields: { ...inferred?.fields, ...config.fields },
+    } as TypeConfig);
+  }
   let nextId = 0;
+  let nextVariableId = 0;
+  const operationArguments = () => {
+    const variables: NonNullable<PendingOperation['variables']> = {};
+    const argumentsForField: ArgumentsForField = (type, field, args, resultType) => {
+      if (!schema) {
+        return argsToGraphQL(args);
+      }
+      const definitions = schema.fields[type]?.[field];
+      if (!definitions) {
+        throw new Error(`fate(graphql): Unknown field '${type}.${field}'.`);
+      }
+      const fieldArgs =
+        resultType && args
+          ? Object.fromEntries(
+              Object.entries(args).filter(([key, value]) => {
+                if (Object.hasOwn(definitions, key) || !isRecord(value)) {
+                  return true;
+                }
+                const nestedArguments = schema.fields[resultType]?.[schemaField(key)];
+                const relation = types.get(resultType)?.fields?.[schemaField(key)];
+                return !(
+                  nestedArguments &&
+                  (Object.keys(nestedArguments).length > 0 ||
+                    (relation && typeof relation === 'object'))
+                );
+              }),
+            )
+          : args;
+      const values = validateGraphQLArguments(schema, definitions, fieldArgs, `${type}.${field}`);
+      const entries = Object.entries(values).map(([key, value]) => {
+        const name = `v${++nextVariableId}`;
+        variables[name] = { type: definitions[key].type, value };
+        return `${key}: $${name}`;
+      });
+      return entries.length ? `(${entries.join(', ')})` : '';
+    };
+    return { argumentsForField, variables };
+  };
   let pending: Array<PendingOperation> = [];
   let scheduled = false;
   let graphQLLiveClient: GraphQLSSEClient | undefined;
@@ -630,13 +798,26 @@ export function createGraphQLTransport<
         }
 
         try {
-          const { data, errors } = await graphQLRequest({
+          const variables = Object.assign(
+            {},
+            ...operations.map((entry) => entry.variables),
+          ) as NonNullable<PendingOperation['variables']>;
+          const definitions = Object.entries(variables).map(
+            ([name, variable]) => `$${name}: ${variable.type}`,
+          );
+          const variableDefinitions = definitions.length ? `(${definitions.join(', ')})` : '';
+          const { data, errors, status } = await graphQLRequest({
             fetchImpl,
             headers,
-            query: `${kind} Fate${kind === 'query' ? 'Query' : 'Mutation'} { ${operations
+            query: `${kind} Fate${kind === 'query' ? 'Query' : 'Mutation'}${variableDefinitions} { ${operations
               .map((entry) => `${entry.alias}: ${entry.selection}`)
               .join(' ')} }`,
             url: endpoint,
+            variables: schema
+              ? Object.fromEntries(
+                  Object.entries(variables).map(([name, variable]) => [name, variable.value]),
+                )
+              : undefined,
           });
           const aliases = new Set(operations.map((operation) => operation.alias));
           const errorsByAlias = new Map<string, Array<GraphQLErrorPayload>>();
@@ -654,13 +835,15 @@ export function createGraphQLTransport<
           }
 
           if (globalErrors.length) {
-            throw graphQLError(globalErrors[0]);
+            throw new GraphQLRequestError(errors, { data, status });
           }
 
           for (const operation of operations) {
             const operationErrors = errorsByAlias.get(operation.alias);
             if (operationErrors?.length) {
-              operation.reject(graphQLError(operationErrors[0]));
+              operation.reject(
+                new GraphQLRequestError(operationErrors, { data: data[operation.alias], status }),
+              );
               continue;
             }
 
@@ -677,18 +860,75 @@ export function createGraphQLTransport<
 
   const transport: Transport<Mutations> = {
     fetchById(type, ids, select, args) {
+      if (!ids.length) {
+        return Promise.resolve([]);
+      }
+      const mapping = byId?.[type];
+      if (mapping) {
+        const paths = new Set(select);
+        const operations = ids.map((id) => {
+          const { argumentsForField, variables } = operationArguments();
+          const fieldArgs = argumentsForField(schema?.queryType ?? 'Query', mapping.field, {
+            [mapping.idArg ?? 'id']: encodeNodeId(type, id),
+          });
+          const selection = buildRecordSelection({
+            args,
+            argumentsForField,
+            path: '',
+            select: paths,
+            type,
+            types,
+          });
+          return {
+            kind: 'query' as const,
+            selection: `${mapping.field}${fieldArgs} { ${selection} }`,
+            transform: (value: unknown) =>
+              normalizeGraphQLValue({
+                decodeNodeId,
+                selection: buildSelectionTree(select),
+                type,
+                types,
+                value,
+              }),
+            variables,
+          };
+        });
+        return Promise.all(operations.map(enqueue)).then((records) =>
+          records.filter((record) => record != null),
+        );
+      }
+      if (!nodes) {
+        throw new Error(
+          `fate(graphql): No refetch mapping for '${type}' and the nodes fallback is disabled.`,
+        );
+      }
+      const { argumentsForField, variables } = operationArguments();
       const globalIds = ids.map((id) => encodeNodeId(type, id));
-      const selection = buildRecordSelection({ args, path: '', select, type, types });
+      const selection = buildRecordSelection({
+        args,
+        argumentsForField,
+        path: '',
+        select,
+        type,
+        types,
+      });
       return enqueue({
         kind: 'query',
-        selection: `nodes(ids: ${graphQLLiteral(globalIds)}) { ... on ${assertIdentifier(
+        selection: `nodes${argumentsForField(schema?.queryType ?? 'Query', 'nodes', { ids: globalIds })} { ... on ${assertIdentifier(
           type,
           'type',
         )} { ${selection} } }`,
         transform: (value) =>
-          (Array.isArray(value) ? value : [])
-            .filter(Boolean)
-            .map((entry) => normalizeGraphQLValue({ decodeNodeId, type, types, value: entry })),
+          (Array.isArray(value) ? value : []).filter(Boolean).map((entry) =>
+            normalizeGraphQLValue({
+              decodeNodeId,
+              selection: buildSelectionTree(select),
+              type,
+              types,
+              value: entry,
+            }),
+          ),
+        variables,
       }) as Promise<Array<unknown>>;
     },
     fetchList(name, select, args) {
@@ -697,23 +937,40 @@ export function createGraphQLTransport<
         throw new Error(`fate(graphql): Missing root list mapping for '${name}'.`);
       }
 
+      const { argumentsForField, variables } = operationArguments();
       const field = assertIdentifier(root.field ?? name, 'field');
-      const selection = buildRecordSelection({ args, path: '', select, type: root.type, types });
-      const rootArgs = rootArgsToGraphQL({ args, type: root.type, types });
+      const selection = buildRecordSelection({
+        args,
+        argumentsForField,
+        path: '',
+        select,
+        type: root.type,
+        types,
+      });
+      const rootArgs = rootArgsToGraphQL({
+        args,
+        argumentsForField,
+        field,
+        schema,
+        type: root.type,
+        types,
+      });
       return enqueue({
         kind: 'query',
         selection: `${field}${rootArgs} { edges { cursor node { ${selection} } } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } }`,
         transform: (value) =>
           normalizeGraphQLValue({
             decodeNodeId,
+            selection: buildSelectionTree(select),
             type: root.type,
             types,
             value,
           }),
+        variables,
       }) as Promise<{
         items: Array<{ cursor: string | undefined; node: unknown }>;
         pagination: Pagination;
-      }>;
+      } | null>;
     },
     fetchQuery(name, select, args) {
       const root = roots?.[name];
@@ -721,53 +978,84 @@ export function createGraphQLTransport<
         throw new Error(`fate(graphql): Missing root query mapping for '${name}'.`);
       }
 
+      const { argumentsForField, variables } = operationArguments();
       const field = assertIdentifier(root.field ?? name, 'field');
-      const selection = buildRecordSelection({ args, path: '', select, type: root.type, types });
-      const rootArgs = rootArgsToGraphQL({ args, type: root.type, types });
+      const selection =
+        root.type === '__value__' || ['Boolean', 'Int', 'Float', 'String', 'ID'].includes(root.type)
+          ? ''
+          : buildRecordSelection({
+              args,
+              argumentsForField,
+              embedded: root.embedded,
+              path: '',
+              select,
+              type: root.type,
+              types,
+            });
+      const rootArgs = rootArgsToGraphQL({
+        args,
+        argumentsForField,
+        field,
+        schema,
+        type: root.type,
+        types,
+      });
       return enqueue({
         kind: 'query',
-        selection: `${field}${rootArgs} { ${selection} }`,
+        selection: `${field}${rootArgs}${selection ? ` { ${selection} }` : ''}`,
         transform: (value) =>
           normalizeGraphQLValue({
             decodeNodeId,
+            selection: buildSelectionTree(select),
             type: root.type,
             types,
             value,
           }),
+        variables,
       });
     },
-    mutate(name, input, select) {
+    mutate(name, input, select, selectionArgs) {
       const mutation = mutations?.[name as Extract<keyof Mutations, string>];
       if (!mutation) {
         throw new Error(`fate(graphql): Missing mutation mapping for '${name}'.`);
       }
 
+      const { argumentsForField, variables } = operationArguments();
       const field = assertIdentifier(mutation.field, 'mutation');
       const args =
         mutation.inputArg === false
           ? ((input ?? {}) as Record<string, unknown>)
           : { [mutation.inputArg ?? 'input']: input };
-      const selection = buildRecordSelection({
-        args: isRecord(input) && isRecord(input.args) ? (input.args as AnyRecord) : undefined,
-        path: '',
-        select,
-        type: mutation.entity,
-        types,
-      });
+      const selection =
+        mutation.entity === '__value__' && !mutation.type
+          ? ''
+          : buildRecordSelection({
+              args: selectionArgs,
+              argumentsForField,
+              embedded: mutation.entity === '__value__',
+              path: '',
+              select,
+              type: mutation.type ?? mutation.entity,
+              types,
+            });
 
       return enqueue({
         kind: 'mutation',
-        selection: `${field}${argsToGraphQL(args)} { ${selection} }`,
+        selection: `${field}${argumentsForField(schema?.mutationType ?? 'Mutation', field, args)}${selection ? ` { ${selection} }` : ''}`,
         transform: (value) =>
           normalizeGraphQLValue({
             decodeNodeId,
+            selection: buildSelectionTree(select),
             type: mutation.entity,
             types,
             value,
           }),
+        variables,
       }) as Promise<Mutations[Extract<keyof Mutations, string>]['output']>;
     },
     mutateDurably,
+    separateMutationSelectionArgs: true,
+    supportsAliases: true,
   };
 
   if (live !== false) {
@@ -778,16 +1066,7 @@ export function createGraphQLTransport<
         return graphQLLiveClient;
       }
 
-      let graphQLSSE: GraphQLSSEModule;
-      try {
-        graphQLSSE = await (graphQLSSEModule ??= importGraphQLSSE());
-      } catch (error) {
-        throw new Error(
-          "fate(graphql): GraphQL live queries require the optional 'graphql-sse' package. Install it or pass live: false.",
-          { cause: error },
-        );
-      }
-
+      const graphQLSSE = await (graphQLSSEModule ??= importGraphQLSSE());
       const { createClient } = graphQLSSE;
       return (graphQLLiveClient ??= createClient({
         credentials: liveOptions.withCredentials === false ? 'same-origin' : 'include',
@@ -942,5 +1221,12 @@ export function createGraphQLTransport<
     };
   }
 
-  return transport;
+  // The live endpoint uses fate's selection protocol, so lower aliases there as
+  // for other native transports. Ordinary GraphQL operations keep native aliases.
+  const liveTransport = withAliasSupport({ ...transport, supportsAliases: false });
+  return {
+    ...transport,
+    subscribeById: liveTransport.subscribeById,
+    subscribeConnection: liveTransport.subscribeConnection,
+  };
 }

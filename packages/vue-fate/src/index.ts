@@ -8,6 +8,8 @@
  */
 
 export {
+  alias,
+  type AliasedSelection,
   clientRoot,
   createClient,
   createGraphQLTransport,
@@ -34,6 +36,10 @@ export {
   type PersistenceSnapshot,
   type ViewRef,
   view,
+  when,
+  type ConditionalSelection,
+  type AliasedView,
+  type ParameterizedView,
 } from '@nkzw/fate';
 
 export {

@@ -63,6 +63,11 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
     overrides: [
       {
+        env: { browser: true },
+        files: ['.vitepress/**/*.vue'],
+        globals: { defineProps: 'readonly' },
+      },
+      {
         files: [
           'example/server-prisma/scripts/**/*.tsx',
           'example/server-prisma/src/index.tsx',
@@ -115,7 +120,6 @@ export default defineConfig({
             './example/server-prisma/prisma.config.ts',
             './example/server-prisma/scripts/**/*.tsx',
             './example/void/vite.config.ts',
-            './sites/stack/vite.config.ts',
             './example/persistence/vite.config.ts',
             '**/__tests__/**',
             '**/tsdown.config.js',

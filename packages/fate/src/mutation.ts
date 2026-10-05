@@ -33,6 +33,10 @@ export function mutation<T extends Entity, I, R>(
   }) as MutationDefinition<T, I, R>;
 }
 
+export function valueMutation<I, R>(): MutationDefinition<{ __typename: '__value__' }, I, R> {
+  return mutation<{ __typename: '__value__' }, I, R>('__value__');
+}
+
 /** Where (or if) to insert the resulting record into relevant lists. */
 export type InsertPosition = 'after' | 'before' | 'none';
 /**
@@ -51,6 +55,10 @@ export type MutationOptions<Identifier extends MutationIdentifier<any, any, any>
   optimistic?: OptimisticUpdate<MutationResult<Identifier>>;
   /** Skip durable delivery for this call, even when persistence is configured. */
   persist?: boolean;
+  /** Fields to select from a value mutation result. */
+  select?: {
+    [K in keyof NonNullable<MutationResult<Identifier>>]?: true | Record<string, unknown>;
+  };
   /** Optional view specifying which fields to select from the server. */
   view?: View<MutationEntity<Identifier>, Selection<MutationEntity<Identifier>>>;
 };
@@ -178,10 +186,22 @@ export type MutationCommand = {
 export function prepareMutation(
   client: FateClient<any, any>,
   command: MutationCommand,
-  config: TypeConfig,
+  config: TypeConfig | undefined,
   durable = false,
 ) {
   const { args, delete: deleteRecord, entity, input, insert, key, optimistic, plan } = command;
+  if (!config) {
+    if (deleteRecord || optimistic) {
+      throw new Error(`fate: Value mutation '${key}' does not support entity updates.`);
+    }
+    return {
+      commit: (_result: unknown) => {},
+      entityId: null,
+      execute: (identity?: MutationIdentity) =>
+        client.executeMutation(key, input, plan?.paths ?? new Set(), { args, identity }),
+      rollback: () => {},
+    };
+  }
   const id = maybeGetId(config.getId, input);
   const optimisticRecord = optimistic
     ? id != null
@@ -245,7 +265,8 @@ export function wrapMutation<
   I extends MutationIdentifier<any, any, any>,
   M extends Record<string, MutationDefinition<any, any, any>>,
 >(client: FateClient<any, M>, identifier: I): MutationFunction<I> {
-  const config = client.getTypeConfig(identifier.entity);
+  const config =
+    identifier.entity === '__value__' ? undefined : client.getTypeConfig(identifier.entity);
 
   return async ({
     args,
@@ -254,6 +275,7 @@ export function wrapMutation<
     insert = 'after',
     optimistic,
     persist,
+    select,
     view,
   }: MutationOptions<I>) => {
     const command: MutationCommand = {
@@ -264,7 +286,11 @@ export function wrapMutation<
       insert,
       key: identifier.key,
       optimistic: optimistic as AnyRecord | undefined,
-      plan: view ? getSelectionPlan(view, null) : undefined,
+      plan: view
+        ? getSelectionPlan(view, null)
+        : select
+          ? getSelectionPlan(select as View<any, any>, null)
+          : undefined,
     };
     if (client.persistence && persist !== false) {
       try {

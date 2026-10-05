@@ -1,5 +1,5 @@
 import { expect, test } from 'vite-plus/test';
-import { graphqlMutation } from '../../graphqlTransport.ts';
+import { graphqlMutation, graphqlValueMutation, graphqlValueRoot } from '../../graphqlTransport.ts';
 import { dataView, list } from '../../server/dataView.ts';
 import { createSourceRegistry } from '../../server/executor.ts';
 import { createFateServer } from '../../server/http.ts';
@@ -17,6 +17,127 @@ const setExampleEnv = () => {
   process.env.DATABASE_URL ??= 'postgresql://fate:echo@localhost:5432/fate';
   process.env.VITE_SERVER_URL ??= 'http://localhost:9020';
 };
+
+test('generates value mutations without importing an entity type', () => {
+  const source = createClientSource({
+    moduleExports: {
+      fateGraphQL: {
+        mutations: {
+          endGame: graphqlValueMutation<{ id: string }, boolean>({
+            field: 'endGame',
+            inputArg: false,
+          }),
+        },
+        schema: 'type Query { origin: Boolean! } type Mutation { endGame(id: ID!): Boolean! }',
+      },
+      Root: {},
+    },
+    moduleName: '@org/game',
+    transport: 'graphql',
+  });
+
+  expect(source).toContain('valueMutation<');
+  expect(source).not.toContain('import type { __value__');
+});
+
+test('generates an ID-less object root as a cached value root', () => {
+  const source = createClientSource({
+    moduleExports: {
+      fateGraphQL: {
+        roots: {
+          prices: graphqlValueRoot<{ amount: number }, { locale: string }>({ type: 'Price' }),
+        },
+        schema: 'type Query { prices(locale: String!): Price } type Price { amount: Int! }',
+        types: [{ type: 'Price' }],
+      },
+      Root: {},
+    },
+    moduleName: '@org/shop',
+    transport: 'graphql',
+  });
+
+  expect(source).toContain(
+    "'prices': clientValueRoot<GraphQLRootOutput<typeof fateGraphQL.roots['prices']>",
+  );
+  expect(source).toContain('"embedded": true');
+  expect(source).toContain('"type": "Price"');
+  expect(source).toContain("type: 'Price'");
+  expect(source).not.toContain('import type { Price');
+});
+
+test('generates ID-less object mutation selections', () => {
+  const source = createClientSource({
+    moduleExports: {
+      fateGraphQL: {
+        mutations: {
+          checkout: graphqlValueMutation<{ id: string }, { approved: boolean }>({
+            field: 'checkout',
+            inputArg: false,
+            type: 'Checkout',
+          }),
+        },
+        schema:
+          'type Query { origin: Boolean! } type Mutation { checkout(id: ID!): Checkout } type Checkout { approved: Boolean! }',
+        types: [{ type: 'Checkout' }],
+      },
+      Root: {},
+    },
+    moduleName: '@org/shop',
+    transport: 'graphql',
+  });
+
+  expect(source).toContain("'checkout': valueMutation<");
+  expect(source).toContain('"type": "Checkout"');
+  expect(source).toContain("type: 'Checkout'");
+});
+
+test('uses schema object shapes for generated nested cache relations', () => {
+  type CharacterImage = { color: string };
+  type Message = { __typename: 'Message'; id: string; text: string };
+  type User = { __typename: 'User'; character: CharacterImage; id: string };
+  type Game = { __typename: 'Game'; id: string; messages: Array<Message> };
+  const character = dataView<CharacterImage>('CharacterImage')({ color: true });
+  const message = dataView<Message>('Message')({ id: true, text: true });
+  const user = dataView<User>('User')({ character, id: true });
+  const game = dataView<Game>('Game')({ id: true, messages: list(message) });
+  const source = createClientSource({
+    moduleExports: {
+      character,
+      fateGraphQL: {
+        schema:
+          'type Query { viewer: User game: Game } type User { id: ID! character: CharacterImage } type CharacterImage { color: String! } type Game { id: ID! messages: [Message!]! } type Message { id: ID! text: String! }',
+      },
+      game,
+      message,
+      Root: { game, viewer: user },
+      user,
+    },
+    moduleName: '@org/app',
+    transport: 'graphql',
+  });
+
+  expect(source).toContain("character: { embedded: 'CharacterImage' }");
+  expect(source).toContain("messages: { listOf: 'Message', array: true }");
+});
+
+test('generates nullable connection result types from GraphQL schema', () => {
+  type Post = { __typename: 'Post'; id: string };
+  const post = dataView<Post>('Post')({ id: true });
+  const source = createClientSource({
+    moduleExports: {
+      fateGraphQL: {
+        schema:
+          'type Query { posts: PostConnection } type PostConnection { edges: [PostEdge] pageInfo: PageInfo! } type PostEdge { cursor: String node: Post } type PageInfo { hasNextPage: Boolean! } type Post { id: ID! }',
+      },
+      post,
+      Root: { posts: list(post) },
+    },
+    moduleName: '@org/blog',
+    transport: 'graphql',
+  });
+
+  expect(source).toContain("} | null, 'Post'");
+});
 
 test('generates the same client source for the Prisma and Drizzle examples', async () => {
   setExampleEnv();
@@ -329,3 +450,43 @@ test.each(['react-fate', 'vue-fate'] as const)(
     expect(sourceText).toContain('live: connectLiveStream');
   },
 );
+
+const refetchSDL = `
+  type Query {
+    viewer: User
+    fetch__User(id: ID!): User
+    byKey(key: ID!): User!
+    wrong(id: ID!): Game
+    many(ids: [ID!]!): [User!]!
+    filtered(id: ID!, tenant: String!): User
+  }
+  type User { id: ID! }
+  type Game { id: ID! }
+`;
+
+const generateRefetchClient = (byId: Record<string, { field: string; idArg?: string }>) =>
+  createClientSource({
+    moduleExports: { fateGraphQL: { byId, nodes: false, schema: refetchSDL } },
+    moduleName: './graphql.ts',
+    transport: 'graphql',
+  });
+
+test('generates configured GraphQL refetch mappings and disables the nodes fallback', () => {
+  const source = generateRefetchClient({ User: { field: 'byKey', idArg: 'key' } });
+  expect(source).toContain('"byId":');
+  expect(source).toContain('"field": "byKey"');
+  expect(source).toContain('"idArg": "key"');
+  expect(source).toContain('"nodes": false');
+  expect(source).toContain('byId: graphQL.byId');
+  expect(source).toContain('nodes: graphQL.nodes');
+});
+
+test.each([
+  [{ User: { field: 'missing' } }, /Query.missing/],
+  [{ User: { field: 'byKey' } }, /Query.byKey.id/],
+  [{ User: { field: 'wrong' } }, /return.*User/],
+  [{ User: { field: 'many', idArg: 'ids' } }, /Query.many.ids/],
+  [{ User: { field: 'filtered' } }, /tenant/],
+])('rejects invalid GraphQL refetch mappings during codegen: %j', (mapping, error) => {
+  expect(() => generateRefetchClient(mapping)).toThrow(error);
+});

@@ -54,7 +54,7 @@ const [posts, loadNext] = useListView(PostConnectionView, postsRef);
         </div>
         <div class="space-y-3">
           <h1 class="text-3xl leading-tight font-semibold text-balance lg:text-4xl">
-            fate is a modern data client for Vue inspired by Relay and GraphQL.
+            fate is a modern data client for the web inspired by Relay and GraphQL.
           </h1>
           <p class="text-sm text-white/80 lg:text-base">
             fate combines view composition, normalized caching, data masking, Vue-native

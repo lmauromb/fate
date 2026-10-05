@@ -120,7 +120,7 @@ export default function HomePage() {
           </Stack>
           <div className="space-y-3">
             <h1 className="text-3xl leading-tight font-semibold text-balance lg:text-4xl">
-              fate is a modern data client for React inspired by Relay and GraphQL.
+              fate is a modern data client for the web inspired by Relay and GraphQL.
             </h1>
             <p className="text-sm text-white/80 lg:text-base">
               fate combines view composition, normalized caching, data masking, Async React

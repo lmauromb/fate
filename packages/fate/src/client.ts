@@ -1,3 +1,5 @@
+import { withAliasSupport } from './alias-transport.ts';
+import { aliasedField, isAliasedSelection, isAliasedView, schemaField } from './alias.ts';
 import {
   combineArgsPayload,
   filterConnectionArgs,
@@ -12,6 +14,7 @@ import {
   getDeferredSelection,
   isDeferredSelection,
 } from './defer.ts';
+import { argumentFieldKey, getFieldKey, getStoragePath } from './field-key.ts';
 import {
   decodeClientHydrationState,
   encodeHydrationValue,
@@ -56,8 +59,15 @@ import {
   resolveSelectionPlan,
   type ListRequestDescriptor,
   type QueryRequestDescriptor,
+  type ValueRequestDescriptor,
   type RequestDescriptor,
+  type RequestItemDescriptor,
 } from './request-descriptor.ts';
+import {
+  createRequestObserver,
+  type RequestObserver,
+  type RequestStateOptions,
+} from './request-observer.ts';
 import FateRequestPromise from './request-promise.ts';
 import { getDeferredSelectionPlan, getSelectionPlan, type SelectionPlan } from './selection.ts';
 import { getListKey, List, mergePreservingExisting, Store } from './store.ts';
@@ -68,7 +78,9 @@ import {
   isViewTag,
   ViewResult,
   ViewsTag,
+  ViewPayload,
   type AnyRecord,
+  type CheckedRequest,
   type Deferred,
   type Entity,
   type EntityId,
@@ -88,7 +100,8 @@ import {
   MutationDefinition,
   RootDefinition,
 } from './types.ts';
-import { getViewNames, getViewPayloads } from './view.ts';
+import { addViewName, getViewNames, getViewPayloads, resolveView } from './view.ts';
+import { resolveConditionalSelection } from './when.ts';
 
 /**
  * Strategy used when resolving a request.
@@ -170,10 +183,11 @@ const getDefaultHydrationScope = (
       .map(([name, root]) => [name, root.type])
       .sort(([left], [right]) => compareStrings(left, right)),
     types: types
-      .map(({ fields, type }) => ({
+      .map(({ fields, possibleTypes, type }) => ({
         fields: Object.entries(fields ?? {})
           .map(([field, descriptor]) => [field, descriptor] as const)
           .sort(([left], [right]) => compareStrings(left, right)),
+        possibleTypes,
         type,
       }))
       .sort((left, right) => compareStrings(left.type, right.type)),
@@ -428,6 +442,62 @@ export class FateClient<
   Mutations extends FateMutations,
   HydrationScope extends string = string,
 > {
+  private writeGeneration = 0;
+  private applyingGeneration: number | undefined;
+  private readonly writeVersions = new Map<string, number>();
+
+  private acceptWrite(key: string, generation: number): boolean {
+    if (this.store.isRecordingOptimistic) {
+      return true;
+    }
+    if ((this.writeVersions.get(key) ?? 0) > generation) {
+      return false;
+    }
+    this.writeVersions.set(key, generation);
+    return true;
+  }
+
+  private withWriteGeneration<T>(generation: number, apply: () => T): T {
+    const previous = this.applyingGeneration;
+    this.applyingGeneration = generation;
+    try {
+      return apply();
+    } finally {
+      this.applyingGeneration = previous;
+    }
+  }
+
+  private relatedEntityType(
+    declaredType: string,
+    possibleTypes: ReadonlyArray<string> | undefined,
+    record: AnyRecord,
+  ): string {
+    if (!possibleTypes) {
+      return declaredType;
+    }
+    const actualType = record.__typename;
+    if (typeof actualType !== 'string' || !possibleTypes.includes(actualType)) {
+      throw new Error(
+        `fate: Expected '${declaredType}' relation to contain one of ${possibleTypes.join(', ')}, received '${String(actualType)}'.`,
+      );
+    }
+    return actualType;
+  }
+
+  private readonly requestListeners = new Map<
+    () => void,
+    { dependencies: Set<string>; descriptor: RequestDescriptor }
+  >();
+  private readonly requestListenersByDependency = new Map<string, Set<() => void>>();
+  private readonly pendingRequestListeners = new Set<() => void>();
+  private requestNotificationScheduled = false;
+  private readonly cacheOnlyRefs = new WeakSet<object>();
+  private readonly cacheOnlyCopies = new WeakMap<object, object>();
+  private readonly requestResults = new WeakMap<RequestDescriptor, AnyRecord>();
+  private readonly requestItemResults = new WeakMap<
+    RequestItemDescriptor,
+    { source: unknown; value: unknown }
+  >();
   private readonly mutationEntities?: ReadonlyMap<string, string>;
   private readonly mutationMap: Record<string, MutationFunction<any>>;
   private readonly parentLists = new Map<
@@ -455,6 +525,7 @@ export class FateClient<
     { fetchAll: boolean; persist?: { maxAge: number } }
   >();
   private readonly rootRequests = new Map<string, EntityId | null>();
+  private readonly rootValues = new Map<string, unknown>();
   private readonly stalledRequests = new Set<string>();
   private gcPending = false;
   private gcScheduled = false;
@@ -462,13 +533,44 @@ export class FateClient<
   private readonly persistenceDisposal?: AbortController;
   private readonly persistenceRuntime?: PersistenceRuntime;
   readonly store = new Store(
-    (ids) => {
+    (ids, lists) => {
       for (const id of ids) {
         this.viewDataCache.invalidate(id);
       }
       this.runPendingGarbageCollection();
+      this.notifyRequests([
+        ...[...ids].map((id) => `entity:${id}`),
+        ...[...lists].map((key) => `list:${key}`),
+        ...[...ids].flatMap((id) =>
+          this.store.getListKeysForEntity(id).map((key) => `list:${key}`),
+        ),
+      ]);
     },
-    (change) => this.persistenceRuntime?.changed(change),
+    (change) => {
+      if (!this.store.isRecordingOptimistic) {
+        const generation = this.applyingGeneration ?? ++this.writeGeneration;
+        if (change.kind === 'record') {
+          if (change.paths) {
+            for (const path of change.paths) {
+              this.acceptWrite(JSON.stringify([change.key, path.split('.')[0]]), generation);
+            }
+          } else {
+            this.acceptWrite(JSON.stringify([change.key]), generation);
+          }
+        } else {
+          this.acceptWrite(`list:${change.key}`, generation);
+        }
+      }
+      this.persistenceRuntime?.changed(change);
+      this.notifyRequests(
+        change.kind === 'record'
+          ? [
+              `entity:${change.key}`,
+              ...this.store.getListKeysForEntity(change.key).map((key) => `list:${key}`),
+            ]
+          : [`list:${change.key}`],
+      );
+    },
   );
   private readonly operationLifetime: OperationLifetime;
   private readonly hydrationLimits: HydrationLimits;
@@ -507,7 +609,7 @@ export class FateClient<
     }
     this.hydrationScope = hydrationScope as HydrationScope;
     this.roots = options.roots;
-    this.transport = options.transport;
+    this.transport = withAliasSupport(options.transport);
     this.types = new Map(options.types.map((entity) => [entity.type, { getId, ...entity }]));
 
     if (options.mutations) {
@@ -600,6 +702,7 @@ export class FateClient<
         {
           rootLists: [...this.rootLists].map(([type, keys]) => [type, [...keys]]),
           rootRequests: [...this.rootRequests],
+          rootValues: [...this.rootValues],
           store: this.store.dehydrate(),
         },
         this.hydrationLimits,
@@ -640,6 +743,7 @@ export class FateClient<
     if (mode === 'replace') {
       this.rootLists.clear();
       this.rootRequests.clear();
+      this.rootValues.clear();
       this.stableRefs.clear();
     }
 
@@ -660,6 +764,12 @@ export class FateClient<
       }
     }
 
+    for (const [key, value] of decoded.rootValues ?? []) {
+      if (mode === 'replace' || !this.rootValues.has(key)) {
+        this.rootValues.set(key, value);
+      }
+    }
+
     this.stalledRequests.clear();
     this.viewDataCache.clear();
     notify();
@@ -672,6 +782,7 @@ export class FateClient<
         {
           rootLists: [...this.rootLists].map(([type, keys]) => [type, [...keys]]),
           rootRequests: [...this.rootRequests],
+          rootValues: [...this.rootValues],
           store: this.store.dehydrateConfirmed(),
         },
         this.hydrationLimits,
@@ -701,6 +812,11 @@ export class FateClient<
     return this.rootRequests.get(key);
   }
 
+  /** @internal */
+  getPersistenceValue(key: string) {
+    return this.rootValues.get(key);
+  }
+
   /** @internal Merge a small disk read beneath optimistic layers. */
   restorePersistenceData(state: ClientHydrationState) {
     this.store.update(() => {
@@ -722,6 +838,11 @@ export class FateClient<
       for (const [key, id] of state.rootRequests) {
         if (!this.rootRequests.has(key)) {
           this.rootRequests.set(key, id);
+        }
+      }
+      for (const [key, value] of state.rootValues ?? []) {
+        if (!this.rootValues.has(key)) {
+          this.rootValues.set(key, value);
         }
       }
       for (const [type, keys] of state.rootLists) {
@@ -914,8 +1035,9 @@ export class FateClient<
     }
 
     const baseRecord = input && typeof input === 'object' ? (input as AnyRecord) : undefined;
+    const separateSelectionArgs = this.transport.separateMutationSelectionArgs;
     const inputArgs =
-      baseRecord && typeof baseRecord.args === 'object'
+      !separateSelectionArgs && baseRecord && typeof baseRecord.args === 'object'
         ? (baseRecord.args as AnyRecord)
         : undefined;
     const argsPayload = combineArgsPayload(
@@ -923,8 +1045,9 @@ export class FateClient<
       combineArgsPayload(inputArgs, options.args),
     );
 
-    const requestInput =
-      argsPayload && baseRecord
+    const requestInput = separateSelectionArgs
+      ? input
+      : argsPayload && baseRecord
         ? ({ ...baseRecord, args: argsPayload } as AnyRecord)
         : argsPayload
           ? ({ args: argsPayload } as AnyRecord)
@@ -932,8 +1055,18 @@ export class FateClient<
 
     return await this.trackPendingRequest(() =>
       options.identity
-        ? this.transport.mutateDurably!(key as any, requestInput as any, select, options.identity)
-        : this.transport.mutate!(key as any, requestInput as any, select),
+        ? separateSelectionArgs
+          ? this.transport.mutateDurably!(
+              key as any,
+              requestInput as any,
+              select,
+              options.identity,
+              argsPayload,
+            )
+          : this.transport.mutateDurably!(key as any, requestInput as any, select, options.identity)
+        : separateSelectionArgs
+          ? this.transport.mutate!(key as any, requestInput as any, select, argsPayload)
+          : this.transport.mutate!(key as any, requestInput as any, select),
     );
   }
 
@@ -998,6 +1131,7 @@ export class FateClient<
     view: V,
     ref: ViewRef<T['__typename']>,
   ): FateThenable<ViewSnapshot<T, S>> {
+    view = resolveView(view, ref);
     if (this.persistence && this.persistence.getSnapshot().status !== 'ready') {
       const key = `restore:${ref.__typename}:${ref.id}:${[...getViewNames(view)].sort().join(',')}`;
       let pending = this.pending.get(key);
@@ -1057,10 +1191,13 @@ export class FateClient<
 
     const plan = getSelectionPlan(view, ref);
     const selectedPaths = plan.paths;
-    const missing = this.store.missingForSelection(entityId, selectedPaths);
+    const missing = this.missingForSelection(entityId, selectedPaths, plan);
 
     const resolveSnapshot = () => {
       const resolvedView = this.readViewSelection<T, S>(view, ref, entityId, plan);
+      if (this.cacheOnlyRefs.has(ref)) {
+        this.markCacheOnly(resolvedView.data);
+      }
 
       const thenable = {
         status: 'fulfilled',
@@ -1088,7 +1225,13 @@ export class FateClient<
     }
 
     if (missing.size > 0) {
-      const key = this.pendingKey(entityId, missing);
+      if (this.cacheOnlyRefs.has(ref)) {
+        throw new Error('fate: Cache-only view is missing selected fields.');
+      }
+      const key = this.pendingKey(
+        entityId,
+        new Set([...missing].map((path) => getStoragePath(path, plan))),
+      );
 
       const pendingOptimistic = this.getPendingOptimisticMutations(entityId);
       if (pendingOptimistic) {
@@ -1131,7 +1274,7 @@ export class FateClient<
             key: `view:${key}`,
           };
           await persistence.restoreRequest(persistedRequest);
-          const remaining = this.store.missingForSelection(entityId, selectedPaths);
+          const remaining = this.missingForSelection(entityId, selectedPaths, plan);
           if (remaining.size) {
             await this.fetchByIdAndNormalize(type, [id], remaining, plan);
             persistence.fetched({
@@ -1147,7 +1290,7 @@ export class FateClient<
           await this.fetchByIdAndNormalize(type, [id], missing, plan);
         }
         try {
-          const remainingMissing = this.store.missingForSelection(entityId, selectedPaths);
+          const remainingMissing = this.missingForSelection(entityId, selectedPaths, plan);
 
           if (remainingMissing.size > 0) {
             this.stalledRequests.add(key);
@@ -1180,7 +1323,7 @@ export class FateClient<
     const ownerType = parsedOwner.type || metadata.type;
     const plan = getDeferredSelectionPlan(metadata.field, metadata.selection);
     const selectedPaths = plan.paths;
-    const missing = this.store.missingForSelection(resolvedOwner, selectedPaths);
+    const missing = this.missingForSelection(resolvedOwner, selectedPaths, plan);
     const hasMissingList = () =>
       this.hasMissingDeferredList(resolvedOwner, ownerType, metadata.field, plan);
     const listMissing = hasMissingList();
@@ -1247,7 +1390,7 @@ export class FateClient<
     const promise = this.trackPendingRequest(async () => {
       try {
         await this.fetchByIdAndNormalize(ownerType, [rawOwnerId], fetchPaths, plan);
-        const remainingMissing = this.store.missingForSelection(resolvedOwner, selectedPaths);
+        const remainingMissing = this.missingForSelection(resolvedOwner, selectedPaths, plan);
 
         if (remainingMissing.size > 0 || hasMissingList()) {
           this.stalledRequests.add(key);
@@ -1285,8 +1428,8 @@ export class FateClient<
     view: V,
     ref: ViewRef<T['__typename']>,
   ): () => void {
+    view = resolveView(view, ref);
     this.assertPersistenceActive();
-    this.assertLiveViewSupport();
 
     const id = ref.id;
     const type = ref.__typename;
@@ -1314,7 +1457,11 @@ export class FateClient<
     }
 
     const entityId = toEntityId(type, id);
-    const plan = getSelectionPlan(view, ref);
+    const plan = getSelectionPlan(view, ref, { includeNestedViews: true });
+    if (plan.paths.size === 0) {
+      return () => {};
+    }
+    this.assertLiveViewSupport();
     const key = this.liveSubscriptionKey(entityId, plan);
     const existing = this.liveSubscriptions.get(key);
     if (existing) {
@@ -1374,7 +1521,11 @@ export class FateClient<
     this.assertLiveConnectionSupport();
 
     const plan = getSelectionPlan(view, null);
-    const connectionArgs = filterConnectionArgs(connection.args);
+    const connectionArgs = filterConnectionArgs(
+      connection.root
+        ? connection.args
+        : { ...connection.args, id: parseEntityId(connection.owner).id },
+    );
     const selectionArgs = resolvedArgsFromPlan(plan);
     const key = this.liveConnectionSubscriptionKey(connection, plan, connectionArgs);
     const existing = this.liveSubscriptions.get(key);
@@ -1695,8 +1846,8 @@ export class FateClient<
     }
 
     const owner = this.store.read(connection.owner);
-    const current = Array.isArray(owner?.[connection.field])
-      ? (owner?.[connection.field] as Array<unknown>)
+    const current = Array.isArray(owner?.[argumentFieldKey(connection.field, connection.hash)])
+      ? (owner?.[argumentFieldKey(connection.field, connection.hash)] as Array<unknown>)
       : [];
     const currentIds = current
       .map((item) => (isNodeRef(item) ? getNodeRefId(item) : null))
@@ -1742,8 +1893,13 @@ export class FateClient<
     this.viewDataCache.invalidate(connection.owner);
     this.store.merge(
       connection.owner,
-      { [connection.field]: createNodeRefsForIds(nextIds, current) },
-      [connection.field],
+      {
+        [argumentFieldKey(connection.field, connection.hash)]: createNodeRefsForIds(
+          nextIds,
+          current,
+        ),
+      },
+      [argumentFieldKey(connection.field, connection.hash)],
     );
   }
 
@@ -1952,12 +2108,17 @@ export class FateClient<
 
       const requestArgs = omitUndefinedValues({ ...connection.args, ...args });
       const { argsPayload, plan } = resolveSelectionPlan(view, requestArgs);
-      const { items, pagination } = await this.transport.fetchList(
+      const connectionResult = await this.transport.fetchList(
         connection.field,
         plan.paths,
         argsPayload,
       );
       this.assertPersistenceActive();
+
+      if (connectionResult === null) {
+        return this.store.getListState(connection.key);
+      }
+      const { items, pagination } = connectionResult;
 
       if (!items) {
         return this.store.getListState(connection.key);
@@ -1993,9 +2154,6 @@ export class FateClient<
 
     const owner = parseEntityId(connection.owner);
     const requestArgs = omitUndefinedValues({ ...connection.args, ...args });
-    if (requestArgs.id === undefined && owner.id) {
-      requestArgs.id = owner.id;
-    }
 
     const { argsPayload, plan } = resolveSelectionPlan(view, requestArgs);
     const nodeSelection = plan.paths;
@@ -2063,21 +2221,212 @@ export class FateClient<
       this.store.setList(connection.key, nextListState);
 
       const current = this.store.read(connection.owner);
-      const existingField = Array.isArray(current?.[connection.field])
-        ? (current?.[connection.field] as Array<unknown>) || []
+      const existingField = Array.isArray(
+        current?.[argumentFieldKey(connection.field, connection.hash)],
+      )
+        ? (current?.[argumentFieldKey(connection.field, connection.hash)] as Array<unknown>) || []
         : [];
       const nodeRefs = createNodeRefsForIds(newIds, undefined);
       const nextField =
         direction === 'forward' ? [...existingField, ...nodeRefs] : [...nodeRefs, ...existingField];
 
       this.viewDataCache.invalidate(connection.owner);
-      this.store.merge(connection.owner, { [connection.field]: nextField }, [connection.field]);
+      this.store.merge(
+        connection.owner,
+        { [argumentFieldKey(connection.field, connection.hash)]: nextField },
+        [argumentFieldKey(connection.field, connection.hash)],
+      );
     });
     return this.store.getListState(connection.key);
   }
 
-  request<R extends Request>(
+  private requestDependencies(request: RequestDescriptor): Set<string> {
+    const dependencies = new Set<string>();
+    for (const item of request.items) {
+      if (item.kind === 'node' || item.kind === 'nodes') {
+        for (const id of item.ids) {
+          dependencies.add(`entity:${toEntityId(item.type, id)}`);
+        }
+      } else if (item.kind === 'query') {
+        dependencies.add(`root:${item.queryKey}`);
+        const entityId = this.rootRequests.get(item.queryKey);
+        if (entityId) {
+          dependencies.add(`entity:${entityId}`);
+        }
+      } else if (item.kind === 'value') {
+        dependencies.add(`root:${item.queryKey}`);
+      } else if (item.kind === 'list') {
+        dependencies.add(`list:${item.listKey}`);
+      }
+    }
+    return dependencies;
+  }
+
+  private updateRequestListenerDependencies(listener: () => void) {
+    const entry = this.requestListeners.get(listener);
+    if (!entry) {
+      return;
+    }
+    const next = this.requestDependencies(entry.descriptor);
+    for (const dependency of entry.dependencies) {
+      if (!next.has(dependency)) {
+        const listeners = this.requestListenersByDependency.get(dependency);
+        listeners?.delete(listener);
+        if (!listeners?.size) {
+          this.requestListenersByDependency.delete(dependency);
+        }
+      }
+    }
+    for (const dependency of next) {
+      if (!entry.dependencies.has(dependency)) {
+        let listeners = this.requestListenersByDependency.get(dependency);
+        if (!listeners) {
+          listeners = new Set();
+          this.requestListenersByDependency.set(dependency, listeners);
+        }
+        listeners.add(listener);
+      }
+    }
+    entry.dependencies = next;
+  }
+
+  private notifyRequests(dependencies: Iterable<string>) {
+    for (const dependency of dependencies) {
+      for (const listener of this.requestListenersByDependency.get(dependency) ?? []) {
+        this.pendingRequestListeners.add(listener);
+      }
+    }
+    if (this.pendingRequestListeners.size === 0) {
+      return;
+    }
+    if (this.requestNotificationScheduled) {
+      return;
+    }
+    this.requestNotificationScheduled = true;
+    queueMicrotask(() => {
+      this.requestNotificationScheduled = false;
+      const listeners = [...this.pendingRequestListeners];
+      this.pendingRequestListeners.clear();
+      for (const listener of listeners) {
+        this.updateRequestListenerDependencies(listener);
+        if (!this.requestListeners.has(listener)) {
+          continue;
+        }
+        listener();
+      }
+    });
+  }
+
+  private markCacheOnly(value: unknown): void {
+    if (!value || typeof value !== 'object' || this.cacheOnlyRefs.has(value)) {
+      return;
+    }
+    this.cacheOnlyRefs.add(value);
+    for (const child of Object.values(value)) {
+      this.markCacheOnly(child);
+    }
+  }
+
+  private cacheOnlyResult<T>(value: T): T {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+    const cached = this.cacheOnlyCopies.get(value);
+    if (cached) {
+      return cached as T;
+    }
+    if (ViewsTag in value) {
+      const copy = Object.create(
+        Object.getPrototypeOf(value),
+        Object.getOwnPropertyDescriptors(value),
+      );
+      this.cacheOnlyCopies.set(value, copy);
+      this.cacheOnlyRefs.add(copy);
+      return copy as T;
+    }
+    if (Array.isArray(value)) {
+      const copy = value.map((child) => this.cacheOnlyResult(child));
+      this.cacheOnlyCopies.set(value, copy);
+      return copy as T;
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+      return value;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (const descriptor of Object.values(descriptors)) {
+      if ('value' in descriptor) {
+        descriptor.value = this.cacheOnlyResult(descriptor.value);
+      }
+    }
+    const copy = Object.create(Object.prototype, descriptors);
+    this.cacheOnlyCopies.set(value, copy);
+    return copy;
+  }
+
+  private cacheOnlyRequestResult<T extends AnyRecord>(request: RequestDescriptor, data: T): T {
+    const cached = this.cacheOnlyCopies.get(data);
+    if (cached) {
+      return cached as T;
+    }
+    const copy = Object.fromEntries(
+      request.items.map((item) => [
+        item.name,
+        // Value roots are opaque payloads, not containers of normalized view refs.
+        item.kind === 'value' ? data[item.name] : this.cacheOnlyResult(data[item.name]),
+      ]),
+    );
+    this.cacheOnlyCopies.set(data, copy);
+    return copy as T;
+  }
+
+  /** Observes complete request results without throwing or suspending on a cache miss. */
+  observeRequest<R extends Request>(
     request: R,
+    options: RequestStateOptions = {},
+  ): RequestObserver<RequestResult<Roots, R>> {
+    const descriptor = this.createRequestDescriptor(request);
+    return createRequestObserver({
+      options,
+      read: () => {
+        if (!this.hasRequestData(descriptor)) {
+          return undefined;
+        }
+        const data = this.getRequestResultFromDescriptor(descriptor) as RequestResult<Roots, R>;
+        return options.mode === 'cache-only' ? this.cacheOnlyRequestResult(descriptor, data) : data;
+      },
+      retain: () => this.retain(request),
+      start: (refresh) =>
+        this.requestWithDescriptor(
+          descriptor,
+          refresh || options.mode === 'stale-while-revalidate'
+            ? 'network-only'
+            : options.mode === 'cache-only'
+              ? 'cache-first'
+              : (options.mode ?? 'cache-first'),
+          { revalidateExisting: true },
+          { persist: options.persist },
+        ),
+      subscribe: (listener) => {
+        this.requestListeners.set(listener, { dependencies: new Set(), descriptor });
+        this.updateRequestListenerDependencies(listener);
+        return () => {
+          const entry = this.requestListeners.get(listener);
+          this.requestListeners.delete(listener);
+          this.pendingRequestListeners.delete(listener);
+          for (const dependency of entry?.dependencies ?? []) {
+            const listeners = this.requestListenersByDependency.get(dependency);
+            listeners?.delete(listener);
+            if (!listeners?.size) {
+              this.requestListenersByDependency.delete(dependency);
+            }
+          }
+        };
+      },
+    });
+  }
+
+  request<const R extends Request>(
+    request: CheckedRequest<Roots, R>,
     options?: RequestOptions,
   ): Promise<RequestResult<Roots, R>> {
     const mode = options?.mode ?? 'cache-first';
@@ -2287,6 +2636,7 @@ export class FateClient<
     optimisticRoots.records.forEach(markRecord);
     optimisticRoots.lists.forEach(markList);
 
+    const retainedValueKeys = new Set<string>();
     for (const descriptor of this.operationLifetime.getDescriptors()) {
       for (const item of descriptor.items) {
         if (item.kind === 'node' || item.kind === 'nodes') {
@@ -2301,8 +2651,14 @@ export class FateClient<
           continue;
         }
 
+        if (item.kind === 'value') {
+          retainedValueKeys.add(item.queryKey);
+          continue;
+        }
+
         if (item.kind === 'list') {
           markList(item.listKey);
+          retainedValueKeys.add(`list:${item.listKey}`);
         }
       }
     }
@@ -2353,6 +2709,12 @@ export class FateClient<
       }
     }
 
+    for (const key of this.rootValues.keys()) {
+      if (!retainedValueKeys.has(key)) {
+        this.rootValues.delete(key);
+      }
+    }
+
     if (swept.lists.size > 0) {
       for (const [type, keys] of this.rootLists.entries()) {
         for (const key of swept.lists) {
@@ -2398,6 +2760,10 @@ export class FateClient<
               .then(execute),
           )
         : execute(),
+    );
+    void handle.then(
+      () => this.notifyRequests(this.requestDependencies(handle.descriptor)),
+      () => this.notifyRequests(this.requestDependencies(handle.descriptor)),
     );
   }
 
@@ -2482,6 +2848,9 @@ export class FateClient<
         return await this.withPersistenceLifecycle(request);
       } finally {
         this.pendingNetworkRequests -= 1;
+        if (!this.pendingNetworkRequests) {
+          this.writeVersions.clear();
+        }
         this.persistenceRuntime?.changed();
       }
     });
@@ -2504,9 +2873,10 @@ export class FateClient<
     }
 
     const result = this.getRequestResultFromDescriptor(request) as RequestResult<Roots, R>;
-    this.executeRequest(request, options).catch(() => {
-      /* empty */
-    });
+    void this.executeRequest(request, options).then(
+      () => this.notifyRequests(this.requestDependencies(request)),
+      () => this.notifyRequests(this.requestDependencies(request)),
+    );
     return result;
   }
 
@@ -2526,7 +2896,23 @@ export class FateClient<
     return this.createRequestDescriptor(request).key;
   }
 
+  private missingForSelection(
+    entityId: EntityId,
+    paths: Iterable<string>,
+    plan: SelectionPlan,
+  ): Set<string> {
+    const storagePaths = new Map([...paths].map((path) => [getStoragePath(path, plan), path]));
+    return new Set(
+      [...this.store.missingForSelection(entityId, storagePaths.keys())].map((path) =>
+        storagePaths.get(path)!,
+      ),
+    );
+  }
+
   private hasRootListData(item: ListRequestDescriptor): boolean {
+    if (this.rootValues.has(`list:${item.listKey}`)) {
+      return true;
+    }
     const listState = this.store.getListState(item.listKey);
     if (!listState) {
       return false;
@@ -2541,7 +2927,7 @@ export class FateClient<
     }
 
     for (const id of listState.ids) {
-      if (this.store.missingForSelection(id, item.plan.paths).size > 0) {
+      if (this.missingForSelection(id, item.plan.paths, item.plan).size > 0) {
         return false;
       }
     }
@@ -2586,7 +2972,7 @@ export class FateClient<
         const fetchedIds: Array<string | number> = [];
         for (const raw of item.ids) {
           const entityId = toEntityId(item.type, raw);
-          const missing = this.store.missingForSelection(entityId, fields);
+          const missing = this.missingForSelection(entityId, fields, item.plan);
           if (fetchAll || missing.size > 0) {
             group.ids.push(raw);
             fetchedIds.push(raw);
@@ -2597,12 +2983,22 @@ export class FateClient<
         }
         fetchedAll &&= fetchedIds.length === item.ids.length;
       } else {
+        if (item.kind === 'value') {
+          if (fetchAll || !this.rootValues.has(item.queryKey)) {
+            promises.push(this.fetchValue(item));
+            fetchedItems.push(item);
+          } else {
+            fetchedAll = false;
+          }
+          continue;
+        }
+
         if (item.kind === 'query') {
           const hasResult = this.rootRequests.has(item.queryKey);
           const entityId = this.rootRequests.get(item.queryKey);
           const missing =
             hasResult && entityId
-              ? this.store.missingForSelection(entityId, item.plan.paths)
+              ? this.missingForSelection(entityId, item.plan.paths, item.plan)
               : item.plan.paths;
 
           if (fetchAll || !hasResult || (entityId && missing.size > 0)) {
@@ -2667,7 +3063,7 @@ export class FateClient<
         const fields = item.plan.paths;
         for (const raw of item.ids) {
           const entityId = toEntityId(item.type, raw);
-          const missing = this.store.missingForSelection(entityId, fields);
+          const missing = this.missingForSelection(entityId, fields, item.plan);
           if (missing.size > 0) {
             return false;
           }
@@ -2680,9 +3076,16 @@ export class FateClient<
         const entityId = this.rootRequests.get(item.queryKey);
         const missing =
           hasResult && entityId
-            ? this.store.missingForSelection(entityId, item.plan.paths)
+            ? this.missingForSelection(entityId, item.plan.paths, item.plan)
             : item.plan.paths;
         if (!hasResult || (entityId && missing.size > 0)) {
+          return false;
+        }
+        continue;
+      }
+
+      if (item.kind === 'value') {
+        if (!this.rootValues.has(item.queryKey)) {
           return false;
         }
         continue;
@@ -2708,73 +3111,86 @@ export class FateClient<
   private getRequestResultFromDescriptor(
     request: RequestDescriptor,
   ): RequestResult<Roots, Request> {
-    const result: AnyRecord = {};
+    const previous = this.requestResults.get(request);
+    let result: AnyRecord = previous ?? {};
     for (const item of request.items) {
-      if (item.kind === 'node') {
-        result[item.name] = this.stableRefWithViewNames(item.type, item.ids[0], item.refViewNames);
-        continue;
-      }
-
-      if (item.kind === 'nodes') {
-        result[item.name] = item.ids.map((id) =>
-          this.stableRefWithViewNames(item.type, id, item.refViewNames),
-        );
-        continue;
-      }
-
-      if (item.kind === 'query') {
-        const entityId = this.rootRequests.get(item.queryKey);
-        if (entityId) {
-          const { id } = parseEntityId(entityId);
-          result[item.name] = this.stableRefWithViewNames(item.type, id, item.refViewNames);
-        } else {
-          result[item.name] = null;
+      const value = this.getRequestItemResult(item);
+      if (!previous || !Object.is(previous[item.name], value)) {
+        if (result === previous) {
+          result = { ...previous };
         }
-        continue;
+        result[item.name] = value;
       }
+    }
+    if (result !== previous) {
+      this.requestResults.set(request, result);
+    }
+    return result as RequestResult<Roots, Request>;
+  }
 
-      if (item.kind !== 'list') {
-        continue;
-      }
+  private getRequestItemResult(item: RequestItemDescriptor): unknown {
+    if (item.kind === 'node') {
+      return this.stableRefWithViewNames(item.type, item.ids[0], item.refViewNames);
+    }
+    if (item.kind === 'query') {
+      const entityId = this.rootRequests.get(item.queryKey);
+      return entityId
+        ? this.stableRefWithViewNames(item.type, parseEntityId(entityId).id, item.refViewNames)
+        : null;
+    }
+    if (item.kind === 'value') {
+      return this.rootValues.get(item.queryKey);
+    }
+    if (item.kind === 'list' && this.rootValues.has(`list:${item.listKey}`)) {
+      return null;
+    }
 
-      const listState = this.store.getListState(item.listKey);
+    const listState = item.kind === 'list' ? this.store.getListState(item.listKey) : undefined;
+    // These containers depend only on immutable descriptor IDs or normalized list
+    // state. Entity field changes are observed by views through their stable refs.
+    const source = item.kind === 'nodes' ? item.ids : listState;
+    const cached = this.requestItemResults.get(item);
+    if (cached && Object.is(cached.source, source)) {
+      return cached.value;
+    }
+
+    let value: unknown;
+    if (item.kind === 'nodes') {
+      value = item.ids.map((id) => this.stableRefWithViewNames(item.type, id, item.refViewNames));
+    } else if (item.kind === 'list') {
       const entries = getListEntries(listState);
       const nodes = entries.map(({ id }) => {
         const { id: rawId, type } = parseEntityId(id);
         return this.stableRefWithViewNames(type, rawId, item.nodeRefViewNames);
       });
-
       if (item.hasItems) {
         const connection: AnyRecord = {
           items: nodes.map((node, index) => ({ cursor: entries[index]?.cursor, node })),
           pagination: listState?.pagination,
         };
-
         const metadata: ConnectionMetadata = {
           args: item.argsPayload,
-          field: item.name,
+          field: item.procedure,
           key: item.listKey,
           live: item.plan.live.get(''),
           owner: item.name,
-          procedure: item.name,
+          procedure: item.procedure,
           root: true,
           type: item.type,
         };
-
         Object.defineProperty(connection, ConnectionTag, {
           configurable: false,
           enumerable: false,
           value: metadata,
           writable: false,
         });
-
-        result[item.name] = connection;
-        continue;
+        value = connection;
+      } else {
+        value = nodes;
       }
-
-      result[item.name] = nodes;
     }
-    return result as RequestResult<Roots, Request>;
+    this.requestItemResults.set(item, { source, value });
+    return value;
   }
 
   private async fetchByIdAndNormalize(
@@ -2785,11 +3201,14 @@ export class FateClient<
     prefix: string | null = null,
   ) {
     const resolvedArgs = resolvedArgsFromPlan(plan);
+    const generation = ++this.writeGeneration;
     await this.trackPendingRequest(async () => {
       const records = await this.transport.fetchById(type, ids, select, resolvedArgs);
       this.assertPersistenceActive();
       for (const record of records) {
-        this.writeEntity(type, record as AnyRecord, select, plan, prefix);
+        this.withWriteGeneration(generation, () =>
+          this.writeEntity(type, record as AnyRecord, select, plan, prefix),
+        );
       }
     });
   }
@@ -2801,16 +3220,45 @@ export class FateClient<
       );
     }
 
+    const generation = ++this.writeGeneration;
     await this.trackPendingRequest(async () => {
-      const record = await this.transport.fetchQuery!(item.name, item.plan.paths, item.argsPayload);
+      const record = await this.transport.fetchQuery!(
+        item.procedure,
+        item.plan.paths,
+        item.argsPayload,
+      );
       this.assertPersistenceActive();
       if (!record || typeof record !== 'object') {
-        this.rootRequests.set(item.queryKey, null);
+        if (this.acceptWrite(`root:${item.queryKey}`, generation)) {
+          this.rootRequests.set(item.queryKey, null);
+        }
         return;
       }
 
-      const entityId = this.writeEntity(item.type, record as AnyRecord, item.plan.paths, item.plan);
-      this.rootRequests.set(item.queryKey, entityId);
+      const entityId = this.withWriteGeneration(generation, () =>
+        this.writeEntity(item.type, record as AnyRecord, item.plan.paths, item.plan),
+      );
+      if (this.acceptWrite(`root:${item.queryKey}`, generation)) {
+        this.rootRequests.set(item.queryKey, entityId);
+      }
+    });
+  }
+
+  private async fetchValue(item: ValueRequestDescriptor) {
+    if (!this.transport.fetchQuery) {
+      throw new Error(`fate: transport does not support value queries for '${item.name}'.`);
+    }
+    const generation = ++this.writeGeneration;
+    await this.trackPendingRequest(async () => {
+      const value = await this.transport.fetchQuery!(
+        item.procedure,
+        item.plan.paths,
+        item.argsPayload,
+      );
+      this.assertPersistenceActive();
+      if (this.acceptWrite(`root:${item.queryKey}`, generation)) {
+        this.rootValues.set(item.queryKey, value);
+      }
     });
   }
 
@@ -2821,40 +3269,79 @@ export class FateClient<
       );
     }
 
+    const generation = ++this.writeGeneration;
     await this.trackPendingRequest(async () => {
-      const { items, pagination } = await this.transport.fetchList!(
-        item.name,
+      const connection = await this.transport.fetchList!(
+        item.procedure,
         item.plan.paths,
         item.argsPayload,
       );
       this.assertPersistenceActive();
-      this.store.update(() => {
-        const ids: Array<EntityId> = [];
-        const cursors: Array<string | undefined> = [];
-        for (const entry of items) {
-          const id = this.writeEntity(
-            item.type,
-            entry.node as AnyRecord,
-            item.plan.paths,
-            item.plan,
-          );
-          ids.push(id);
-          cursors.push(entry.cursor);
+      const acceptList = this.acceptWrite(`list:${item.listKey}`, generation);
+      if (connection === null) {
+        if (acceptList) {
+          this.rootValues.set(`list:${item.listKey}`, null);
         }
-        if (!filterConnectionArgs(item.argsPayload)) {
-          this.registerRootList(item.type, item.listKey);
-        }
+        return;
+      }
+      if (acceptList) {
+        this.rootValues.delete(`list:${item.listKey}`);
+      }
+      const { items, pagination } = connection;
+      this.withWriteGeneration(generation, () =>
+        this.store.update(() => {
+          const ids: Array<EntityId> = [];
+          const cursors: Array<string | undefined> = [];
+          for (const entry of items) {
+            const id = this.writeEntity(
+              item.type,
+              entry.node as AnyRecord,
+              item.plan.paths,
+              item.plan,
+            );
+            ids.push(id);
+            cursors.push(entry.cursor);
+          }
+          if (!acceptList) {
+            return;
+          }
+          if (!filterConnectionArgs(item.argsPayload)) {
+            this.registerRootList(item.type, item.listKey);
+          }
 
-        const previous = this.store.getListState(item.listKey);
-        this.store.setList(
-          item.listKey,
-          this.mergeListState(previous, ids, cursors, pagination, {
-            ...getPaginationMergeInfo(item.argsPayload),
-            replace: true,
-          }),
-        );
-      });
+          const previous = this.store.getListState(item.listKey);
+          this.store.setList(
+            item.listKey,
+            this.mergeListState(previous, ids, cursors, pagination, {
+              ...getPaginationMergeInfo(item.argsPayload),
+              replace: true,
+            }),
+          );
+        }),
+      );
     });
+  }
+
+  private normalizeEmbedded(
+    value: unknown,
+    plan: SelectionPlan | undefined,
+    prefix: string,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.normalizeEmbedded(item, plan, prefix));
+    }
+    if (
+      !isRecord(value) ||
+      ![...(plan?.paths ?? [])].some((path) => path.startsWith(`${prefix}.`))
+    ) {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => {
+        const path = `${prefix}.${key}`;
+        return [getFieldKey(path, plan), this.normalizeEmbedded(child, plan, path)];
+      }),
+    );
   }
 
   private writeEntity(
@@ -2866,6 +3353,7 @@ export class FateClient<
     insert?: InsertPosition,
   ): EntityId {
     return this.store.update(() => {
+      type = this.relatedEntityType(type, this.types.get(type)?.possibleTypes, record);
       const config = this.types.get(type);
       if (!config) {
         throw new Error(`fate: Found unknown entity type '${type}' in normalization.`);
@@ -2873,19 +3361,37 @@ export class FateClient<
 
       const id = config.getId(record);
       const entityId = toEntityId(type, id);
+      const generation = this.applyingGeneration ?? ++this.writeGeneration;
+      if (
+        !this.store.isRecordingOptimistic &&
+        (this.writeVersions.get(JSON.stringify([entityId])) ?? 0) > generation
+      ) {
+        return entityId;
+      }
       const result: AnyRecord = {};
       const selectionTree = groupSelectionByPrefix(select);
 
+      const fields = Object.fromEntries(
+        Object.keys(record).map((key) => [key, config.fields?.[schemaField(key)]]),
+      );
       if (config.fields) {
-        for (const [key, relationDescriptor] of Object.entries(config.fields)) {
+        for (const [key, relationDescriptor] of Object.entries(fields)) {
+          if (!relationDescriptor) {
+            continue;
+          }
           const value = record[key];
           const fieldPath = pathPrefix ? `${pathPrefix}.${key}` : key;
           const fieldArgs = plan?.args.get(fieldPath);
+          const storageKey = getFieldKey(fieldPath, plan);
+          if (!Object.hasOwn(record, key)) {
+            continue;
+          }
+          const acceptField = this.acceptWrite(JSON.stringify([entityId, storageKey]), generation);
           if (relationDescriptor === 'scalar') {
-            if (!Object.hasOwn(record, key)) {
+            if (!acceptField) {
               continue;
             }
-            result[key] = value;
+            result[storageKey] = value;
           } else if (
             relationDescriptor &&
             typeof relationDescriptor === 'object' &&
@@ -2893,11 +3399,17 @@ export class FateClient<
           ) {
             const childPaths = selectionTree.get(key) ?? emptySet;
             if (value === null) {
-              result[key] = null;
+              if (acceptField) {
+                result[storageKey] = null;
+              }
               continue;
             }
             if (value && typeof value === 'object' && !isNodeRef(value)) {
-              const childType = relationDescriptor.type;
+              const childType = this.relatedEntityType(
+                relationDescriptor.type,
+                relationDescriptor.possibleTypes,
+                value as AnyRecord,
+              );
               const childConfig = this.types.get(childType);
               if (!childConfig) {
                 throw new Error(
@@ -2905,7 +3417,9 @@ export class FateClient<
                 );
               }
               const childId = toEntityId(childType, childConfig.getId(value));
-              result[key] = createNodeRef(childId);
+              if (acceptField) {
+                result[storageKey] = createNodeRef(childId);
+              }
 
               this.writeEntity(childType, value as AnyRecord, childPaths, plan, fieldPath);
             }
@@ -2916,12 +3430,13 @@ export class FateClient<
           ) {
             const childPaths = selectionTree.get(key) ?? emptySet;
             if (value === null) {
-              result[key] = null;
+              if (acceptField) {
+                result[storageKey] = null;
+              }
               continue;
             }
             const childType = relationDescriptor.listOf;
-            const childConfig = this.types.get(childType);
-            if (!childConfig) {
+            if (!this.types.has(childType)) {
               throw new Error(
                 `fate: Unknown related type '${childType}' (field '${type}.${key}').`,
               );
@@ -2993,9 +3508,20 @@ export class FateClient<
                 }
 
                 if (node && typeof node === 'object') {
-                  const childId = toEntityId(childType, childConfig.getId(node as AnyRecord));
+                  const concreteType = this.relatedEntityType(
+                    childType,
+                    relationDescriptor.possibleTypes,
+                    node as AnyRecord,
+                  );
+                  const childConfig = this.types.get(concreteType);
+                  if (!childConfig) {
+                    throw new Error(
+                      `fate: Unknown related type '${concreteType}' (field '${type}.${key}').`,
+                    );
+                  }
+                  const childId = toEntityId(concreteType, childConfig.getId(node as AnyRecord));
 
-                  this.writeEntity(childType, node as AnyRecord, nodeSelection, plan, fieldPath);
+                  this.writeEntity(concreteType, node as AnyRecord, nodeSelection, plan, fieldPath);
 
                   ids.push(childId);
                   continue;
@@ -3004,7 +3530,11 @@ export class FateClient<
                 continue;
               }
 
-              const listKey = getListKey(entityId, key, fieldArgs?.hash);
+              if (!acceptField) {
+                continue;
+              }
+
+              const listKey = getListKey(entityId, schemaField(key), fieldArgs?.hash);
               const previousList = this.store.getListState(listKey);
               const argsValue = fieldArgs?.value as AnyRecord | undefined;
 
@@ -3017,9 +3547,9 @@ export class FateClient<
               );
 
               const listChanged = !areListStatesEqual(previousList, nextListState);
-              result[key] = createNodeRefsForIds(
+              result[storageKey] = createNodeRefsForIds(
                 nextListState.ids,
-                this.store.read(entityId)?.[key],
+                this.store.read(entityId)?.[storageKey],
                 {
                   reuseCurrentArray: !listChanged,
                 },
@@ -3028,19 +3558,40 @@ export class FateClient<
               this.store.setList(listKey, nextListState);
             }
           } else {
-            result[key] = value;
+            if (acceptField) {
+              result[storageKey] = this.normalizeEmbedded(value, plan, fieldPath);
+            }
           }
         }
       }
 
       for (const [key, value] of Object.entries(record)) {
-        if (!(key in (config.fields ?? {}))) {
-          result[key] = value;
+        if (!fields[key]) {
+          const fieldPath = pathPrefix ? `${pathPrefix}.${key}` : key;
+          const storageKey = getFieldKey(fieldPath, plan);
+          if (this.acceptWrite(JSON.stringify([entityId, storageKey]), generation)) {
+            result[storageKey] = value;
+          }
+        }
+      }
+
+      const selectedPaths: Array<string> = [];
+      for (const path of select) {
+        const storagePath = getStoragePath(path, plan, pathPrefix ?? '');
+        const storageKey = storagePath.split('.')[0];
+        // JSON omits selected undefined fields; they still have coverage unless
+        // a newer write has superseded this response.
+        if (
+          Object.hasOwn(result, storageKey) ||
+          (!Object.hasOwn(record, path.split('.')[0]) &&
+            this.acceptWrite(JSON.stringify([entityId, storageKey]), generation))
+        ) {
+          selectedPaths.push(storagePath);
         }
       }
 
       this.viewDataCache.invalidate(entityId);
-      this.store.merge(entityId, result, select);
+      this.withWriteGeneration(generation, () => this.store.merge(entityId, result, selectedPaths));
       this.linkParentLists(type, entityId, result, insert ?? 'after');
       if (!pathPrefix && insert) {
         this.insertIntoRootLists(type, entityId, insert);
@@ -3154,22 +3705,44 @@ export class FateClient<
       parentId: EntityId,
       prefix: string | null,
     ) => {
-      for (const [key, selectionKind] of Object.entries(viewPayload)) {
+      for (const [key, conditionalSelection] of Object.entries(viewPayload)) {
+        const rawSelection = resolveConditionalSelection(conditionalSelection);
+        if (rawSelection === undefined) {
+          target[key] = undefined;
+          continue;
+        }
+        if (isAliasedView(rawSelection)) {
+          aliasedField(key, key);
+          const { id, type } = parseEntityId(parentId);
+          const namedRef = this.stableRefWithViewNames(
+            type,
+            parentId === entityId ? ref.id : id,
+            getViewNames(rawSelection.view),
+          );
+          target[key] = this.cacheOnlyRefs.has(ref) ? this.cacheOnlyResult(namedRef) : namedRef;
+          continue;
+        }
+        const selectionKind = isAliasedSelection(rawSelection)
+          ? rawSelection.selection
+          : rawSelection;
+        const field = isAliasedSelection(rawSelection) ? rawSelection.field : key;
+        const pathField = isAliasedSelection(rawSelection) ? aliasedField(key, field) : key;
         if (isViewTag(key)) {
           if (!target[ViewsTag]) {
             assignViewTag(target, new Set());
           }
 
-          target[ViewsTag]!.add(key);
+          addViewName(target[ViewsTag]!, key, rawSelection as ViewPayload<any, any>);
           continue;
         }
 
-        const fieldPath = prefix ? `${prefix}.${key}` : key;
+        const fieldPath = prefix ? `${prefix}.${pathField}` : pathField;
+        const storageKey = getFieldKey(fieldPath, plan);
         if (isDeferredSelection(selectionKind)) {
           const { id, type } = parseEntityId(parentId);
-          coverageById.set(parentId, (coverageById.get(parentId) ?? new Set()).add(key));
+          coverageById.set(parentId, (coverageById.get(parentId) ?? new Set()).add(storageKey));
           target[key] = createDeferred({
-            field: key,
+            field,
             id,
             owner: parentId,
             selection: getDeferredSelection(selectionKind),
@@ -3178,11 +3751,11 @@ export class FateClient<
           continue;
         }
 
-        coverageById.set(parentId, (coverageById.get(parentId) ?? new Set()).add(key));
+        coverageById.set(parentId, (coverageById.get(parentId) ?? new Set()).add(storageKey));
 
         const selectionType = typeof selectionKind;
         if (selectionType === 'boolean' && selectionKind) {
-          target[key] = record[key];
+          target[key] = record[storageKey];
         } else if (selectionKind && selectionType === 'object') {
           const selectionValue = selectionKind as AnyRecord;
           const { args: selectionArgs, ...selectionWithoutArgs } = selectionValue;
@@ -3192,7 +3765,7 @@ export class FateClient<
             Object.keys(selectionWithoutArgs).length === 0;
 
           if (hasArgsOnly) {
-            target[key] = record[key];
+            target[key] = record[storageKey];
             continue;
           }
 
@@ -3204,7 +3777,7 @@ export class FateClient<
             ? selectionWithoutArgs
             : selectionValue;
 
-          const value = record[key];
+          const value = record[storageKey];
 
           if (value == null) {
             target[key] = null;
@@ -3215,7 +3788,7 @@ export class FateClient<
             if (nextSelection.items && typeof nextSelection.items === 'object') {
               const selection = nextSelection.items as AnyRecord;
               const fieldArgs = plan.args.get(fieldPath);
-              const listKey = getListKey(parentId, key, fieldArgs?.hash);
+              const listKey = getListKey(parentId, field, fieldArgs?.hash);
               const listState = this.store.getListState(listKey);
               const entries = listState
                 ? getListEntries(listState)
@@ -3281,27 +3854,17 @@ export class FateClient<
                   connection.pagination = undefined;
                 }
               }
-              const { id: ownerRawId, type: parentType } = parseEntityId(parentId);
+              const { type: parentType } = parseEntityId(parentId);
               if (parentType) {
-                const childType = this.getListNodeType(parentType, key);
-                const metadataArgs = (() => {
-                  if (!fieldArgs?.value && ownerRawId === undefined) {
-                    return undefined;
-                  }
-                  const value = fieldArgs?.value ? { ...fieldArgs.value } : ({} as AnyRecord);
-                  if (ownerRawId !== undefined) {
-                    value.id = ownerRawId;
-                  }
-                  return value;
-                })();
+                const childType = this.getListNodeType(parentType, field);
                 const metadata: ConnectionMetadata = {
-                  args: metadataArgs,
-                  field: key,
+                  args: fieldArgs?.value ? { ...fieldArgs.value } : undefined,
+                  field,
                   hash: fieldArgs?.hash,
                   key: listKey,
                   live: plan.live.get(fieldPath),
                   owner: parentId,
-                  procedure: `${parentType}.${key}`,
+                  procedure: `${parentType}.${field}`,
                   root: false,
                   type: childType,
                 };

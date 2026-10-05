@@ -26,7 +26,7 @@ React data fetching is still largely centered around requests. Components fetch 
 
 _fate_ takes a different approach: Instead of caching requests, _fate_ caches normalized objects, shifts thinking to what data is required, and composes declarative view requirements into a single request at the application root. This enables precise optimistic updates, efficient live subscriptions, predictable cache behavior, and deep integration with modern Async React features through a minimal, composable API.
 
-Check out the [initial announcement](/posts/introducing-fate#a-modern-data-client-for-react-trpc) if you'd like to learn more about why _fate_ exists!
+Check out the [initial announcement](/posts/introducing-fate#a-modern-data-client-for-the-web) if you'd like to learn more about why _fate_ exists!
 
 ## How does _fate_ work?
 
@@ -170,15 +170,15 @@ Besides all the features above, there are also many fixes that went into this re
 You can get started using the new [`create-fate`](https://www.npmjs.com/package/create-fate) package. I recommend using it with [Vite+](https://viteplus.dev/):
 
 ```bash
-vp create fate my-app
+vp create fate
 ```
 
 The interactive CLI allows you to choose from one of four templates. You can also use it directly:
 
 ```bash
-vp create fate my-app --template drizzle # drizzle + trpc
-vp create fate my-app --template http # drizzle + http
-vp create fate my-app --template prisma # prisma + trpc
+vp create fate -- --template drizzle # drizzle + trpc
+vp create fate -- --template http # drizzle + http
+vp create fate -- --template prisma # prisma + trpc
 ```
 
 These templates let you start with the stack that best matches your preferences.

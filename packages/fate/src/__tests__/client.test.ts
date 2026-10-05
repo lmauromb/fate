@@ -168,6 +168,34 @@ test('live view subscriptions merge pushed records into the cache', () => {
   dispose();
 });
 
+test('live view subscriptions include fields selected by nested views', () => {
+  type Card = { __typename: 'Card'; id: string; title: string };
+  type Board = { __typename: 'Board'; cards: Array<Card>; id: string };
+
+  const CardView = view<Card>()({ id: true, title: true });
+  const BoardView = view<Board>()({ cards: { ...CardView }, id: true });
+  let livePaths: Iterable<string> = new Set();
+  const client = createClient({
+    roots: { board: clientRoot<Board, 'Board'>('Board') },
+    transport: {
+      async fetchById() {
+        return [];
+      },
+      subscribeById(_type, _id, paths) {
+        livePaths = paths;
+        return () => {};
+      },
+    },
+    types: [{ fields: { cards: { listOf: 'Card' } }, type: 'Board' }, { type: 'Card' }],
+  });
+
+  const boardRef = client.ref<Board>('Board', 'board-1', BoardView);
+  const dispose = client.subscribeLiveView(BoardView, boardRef);
+
+  expect([...livePaths].sort()).toEqual(['cards.id', 'cards.title', 'id']);
+  dispose();
+});
+
 test('live view subscriptions preserve cached scalars outside narrowed updates', () => {
   type LivePost = { __typename: 'Post'; id: string; likes: number; title: string };
 
@@ -5109,7 +5137,7 @@ test(`'loadConnection' scopes args to the connection field`, async () => {
     'Post',
     ['post-1'],
     new Set(['comments.content', 'comments.id']),
-    { comments: { after: 'cursor-1', first: 2, id: 'post-1' } },
+    { comments: { after: 'cursor-1', first: 2 } },
   );
 });
 
@@ -5992,3 +6020,38 @@ test(`'linkParentLists' keeps unresolved inserts pending across scoped lists`, (
     pendingAfterIds: [newCommentId],
   });
 });
+
+test.each([undefined, 'filter-id'])(
+  'keeps the connection owner separate from nested pagination arguments (id: %s)',
+  async (id) => {
+    const fetchById = vi.fn(async () => []);
+    const client = createClient({
+      roots: {},
+      transport: { fetchById },
+      types: [{ fields: { comments: { listOf: 'Comment' } }, type: 'Post' }, { type: 'Comment' }],
+    });
+    const CommentView = view<Comment>()({ content: true, id: true });
+    const args = { first: 2, ...(id ? { id } : {}) };
+
+    const PostView = view<Post>()({ comments: { args, items: { node: CommentView } }, id: true });
+    const plan = getSelectionPlan(PostView, null);
+    client.write('Post', { comments: [], id: 'post-1' }, plan.paths, plan);
+    const snapshot = await client.readView<Post, SelectionOf<typeof PostView>, typeof PostView>(
+      PostView,
+      client.ref('Post', 'post-1', PostView),
+    );
+    const metadata = (snapshot.data.comments as unknown as { [ConnectionTag]: ConnectionMetadata })[
+      ConnectionTag
+    ];
+    expect(metadata.args).toEqual(args);
+
+    await client.loadConnection(CommentView, metadata, { after: 'cursor-1' });
+
+    expect(fetchById).toHaveBeenCalledExactlyOnceWith(
+      'Post',
+      ['post-1'],
+      new Set(['comments.content', 'comments.id']),
+      { comments: { ...args, after: 'cursor-1' } },
+    );
+  },
+);

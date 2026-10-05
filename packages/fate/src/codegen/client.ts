@@ -1,14 +1,41 @@
+import type { GraphQLSchema } from 'graphql';
+import {
+  graphQLOutputRelations,
+  validateGraphQLRefetchMappings,
+  type GraphQLByIdConfig,
+} from '../graphqlSchema.ts';
 import { sortObjectKeys } from '../sortObjectKeys.ts';
 import type { FateViteTransport } from '../viteTypes.ts';
+import {
+  createGraphQLArgumentSchema,
+  graphQLArgumentContracts,
+  graphQLTypeScriptType,
+} from './graphql.ts';
 import { createSchema, isDataView } from './schema.ts';
 
 type ModuleExports = Record<string, any>;
 type ClientModule = '@nkzw/fate' | 'react-fate' | 'vue-fate';
 
-const formatRelation = (value: { listOf?: string; type?: string }) =>
-  'listOf' in value ? `{ listOf: '${value.listOf}' }` : `{ type: '${value.type}' }`;
+const formatRelation = (value: {
+  array?: boolean;
+  embedded?: string;
+  listOf?: string;
+  possibleTypes?: ReadonlyArray<string>;
+  type?: string;
+}) =>
+  'listOf' in value
+    ? `{ listOf: '${value.listOf}'${value.array ? ', array: true' : ''}${value.possibleTypes ? `, possibleTypes: ${JSON.stringify(value.possibleTypes)}` : ''} }`
+    : 'embedded' in value
+      ? `{ embedded: '${value.embedded}' }`
+      : `{ type: '${value.type}'${value.possibleTypes ? `, possibleTypes: ${JSON.stringify(value.possibleTypes)}` : ''} }`;
 
-const formatTypes = (types: ReadonlyArray<{ fields?: Record<string, any>; type: string }>) => {
+const formatTypes = (
+  types: ReadonlyArray<{
+    fields?: Record<string, any>;
+    possibleTypes?: ReadonlyArray<string>;
+    type: string;
+  }>,
+) => {
   if (!types.length) {
     return '[]';
   }
@@ -22,6 +49,9 @@ const formatTypes = (types: ReadonlyArray<{ fields?: Record<string, any>; type: 
         lines.push(`      ${field}: ${formatRelation(relation)},`);
       }
       lines.push('    },');
+    }
+    if (typeConfig.possibleTypes) {
+      lines.push(`    possibleTypes: ${JSON.stringify(typeConfig.possibleTypes)},`);
     }
     lines.push(`    type: '${typeConfig.type}',`, '  },');
   }
@@ -408,19 +438,150 @@ const createGraphQLClientSource = ({
     Root ?? {},
   );
   const graphQLConfig = (moduleExports[graphQLConfigExportName] ?? {}) as {
-    mutations?: Record<string, { entity: string; field: string; inputArg?: false | string }>;
-    roots?: Record<string, { field?: string }>;
+    byId?: Readonly<Record<string, GraphQLByIdConfig>>;
+    mutations?: Record<
+      string,
+      { entity: string; field: string; inputArg?: false | string; type?: string }
+    >;
+    nodes?: boolean;
+    roots?: Record<string, { embedded?: boolean; field?: string; type?: string }>;
+    schema?: string | GraphQLSchema;
+    types?: ReadonlyArray<{ fields?: Record<string, any>; type: string }>;
   };
-
+  const argumentSchema = graphQLConfig.schema
+    ? createGraphQLArgumentSchema(graphQLConfig.schema)
+    : undefined;
+  validateGraphQLRefetchMappings(graphQLConfig.byId, argumentSchema);
+  const inferredTypes = graphQLOutputRelations(argumentSchema);
+  const inferredByType = new Map(inferredTypes.map((entry) => [entry.type, entry]));
+  const explicitByType = new Map((graphQLConfig.types ?? []).map((entry) => [entry.type, entry]));
+  const transportTypes = [
+    ...types.map((entry) => ({
+      ...entry,
+      fields: {
+        ...entry.fields,
+        ...inferredByType.get(entry.type)?.fields,
+        ...explicitByType.get(entry.type)?.fields,
+      },
+      possibleTypes: inferredByType.get(entry.type)?.possibleTypes,
+    })),
+    ...(graphQLConfig.types ?? [])
+      .filter((entry) => !types.some((type) => type.type === entry.type))
+      .map((entry) => ({
+        ...entry,
+        fields: { ...inferredByType.get(entry.type)?.fields, ...entry.fields },
+        possibleTypes: inferredByType.get(entry.type)?.possibleTypes,
+      })),
+    ...inferredTypes.filter(
+      (entry) =>
+        argumentSchema?.outputs?.[entry.type]?.id &&
+        !types.some((type) => type.type === entry.type) &&
+        !(graphQLConfig.types ?? []).some((type) => type.type === entry.type),
+    ),
+  ];
+  const selectionTypes = [
+    ...transportTypes,
+    ...inferredTypes.filter((entry) => !transportTypes.some((type) => type.type === entry.type)),
+  ];
+  const mutationInputType = (name: string, field: string, inputArg?: false | string) => {
+    if (!argumentSchema) {
+      return `GraphQLMutationInput<typeof ${graphQLConfigExportName}.mutations['${name}']>`;
+    }
+    const args = argumentSchema.fields[argumentSchema.mutationType ?? 'Mutation']?.[field];
+    if (!args) {
+      throw new Error(`fate(graphql): Unknown mutation field '${field}'.`);
+    }
+    if (inputArg === false) {
+      return `GraphQLFieldArguments[${JSON.stringify(argumentSchema.mutationType)}][${JSON.stringify(field)}]`;
+    }
+    const input = args[inputArg ?? 'input'];
+    if (!input) {
+      throw new Error(`fate(graphql): Unknown input argument '${field}.${inputArg ?? 'input'}'.`);
+    }
+    if (
+      Object.entries(args).some(
+        ([key, value]) =>
+          key !== (inputArg ?? 'input') && value.type.endsWith('!') && !value.hasDefault,
+      )
+    ) {
+      throw new Error(
+        `fate(graphql): Mutation '${field}' has additional required arguments; use inputArg: false.`,
+      );
+    }
+    return graphQLTypeScriptType(input.type, argumentSchema);
+  };
+  if (argumentSchema) {
+    for (const [name] of Object.entries({ ...roots, ...graphQLConfig.roots })) {
+      const field = graphQLConfig.roots?.[name]?.field ?? name;
+      if (!argumentSchema.fields[argumentSchema.queryType]?.[field]) {
+        throw new Error(`fate(graphql): Unknown query field '${field}'.`);
+      }
+    }
+    for (const dataView of Object.values(moduleExports).filter(isDataView)) {
+      for (const field of Object.keys(dataView.fields)) {
+        if (!argumentSchema.fields[dataView.typeName]?.[field]) {
+          throw new Error(`fate(graphql): Unknown field '${dataView.typeName}.${field}'.`);
+        }
+      }
+    }
+  }
+  const selectionArguments = argumentSchema
+    ? `
+export type GraphQLSelectionArguments = {
+${selectionTypes
+  .map(
+    ({ fields, type }) => `  ${JSON.stringify(type)}: {
+${Object.entries(argumentSchema.fields[type] ?? {})
+  .flatMap(([field, args]) => {
+    const relation = fields?.[field];
+    const child =
+      relation &&
+      ('type' in relation
+        ? relation.type
+        : 'embedded' in relation
+          ? relation.embedded
+          : relation.listOf);
+    if (!child && !Object.keys(args).length) {
+      return [];
+    }
+    const contract = Object.keys(args).length
+      ? `GraphQLFieldArguments[${JSON.stringify(type)}][${JSON.stringify(field)}]`
+      : '';
+    return [
+      `    ${JSON.stringify(field)}?: ${[contract, child ? `GraphQLSelectionArguments[${JSON.stringify(child)}]` : ''].filter(Boolean).join(' & ')};`,
+    ];
+  })
+  .join('\n')}
+  };`,
+  )
+  .join('\n')}
+};`
+    : '';
+  const rootArgumentsType = (name: string, type: string) => {
+    if (!argumentSchema) {
+      return '';
+    }
+    const field = graphQLConfig.roots?.[name]?.field ?? name;
+    const args = argumentSchema.fields[argumentSchema.queryType][field];
+    return `, ${Object.keys(args).length ? `GraphQLFieldArguments[${JSON.stringify(argumentSchema.queryType)}][${JSON.stringify(field)}] & ` : ''}GraphQLSelectionArguments[${JSON.stringify(type)}]`;
+  };
   const byIdEntries = types.map((entry) => ({
     name: lowerTypeName(entry.type),
     type: entry.type,
   }));
+  const nullableRoot = (name: string) => {
+    if (!argumentSchema) {
+      return false;
+    }
+    const field = graphQLConfig.roots?.[name]?.field ?? name;
+    return !argumentSchema.outputs?.[argumentSchema.queryType]?.[field]?.endsWith('!');
+  };
   const mutationEntries = Object.entries(graphQLConfig.mutations ?? {}).map(([name, config]) => ({
     entity: config.entity,
     field: config.field,
     inputArg: config.inputArg,
     name,
+    type: config.type,
   }));
   const rootEntries = [
     ...byIdEntries.map(({ name, type }) => ({
@@ -428,65 +589,94 @@ const createGraphQLClientSource = ({
       type,
       value: `'${name}': clientRoot<Array<${type}>, '${type}'>('${type}'),`,
     })),
-    ...Object.entries(roots).map(([name, root]) => ({
-      name,
-      type: root.type,
-      value: `'${name}': clientRoot<${
-        root.kind === 'list'
-          ? `{
+    ...Object.entries(roots)
+      .filter(([name]) => !graphQLConfig.roots?.[name]?.embedded)
+      .map(([name, root]) => ({
+        name,
+        type: root.type,
+        value: `'${name}': clientRoot<${
+          root.kind === 'list'
+            ? `{
   items: Array<{ cursor?: string; node: ${root.type} }>;
   pagination: import('${clientModule}').Pagination;
-}`
-          : `${root.type} | null`
-      }, '${root.type}'>('${root.type}'),`,
-    })),
+}${nullableRoot(name) ? ' | null' : ''}`
+            : `${root.type} | null`
+        }, '${root.type}'${rootArgumentsType(name, root.type)}>('${root.type}'),`,
+      })),
+    ...Object.entries(graphQLConfig.roots ?? {})
+      .filter(([, root]) => root.embedded)
+      .map(([name]) => ({
+        name,
+        type: '__value__',
+        value: `'${name}': clientValueRoot<GraphQLRootOutput<typeof ${graphQLConfigExportName}.roots['${name}']>, GraphQLRootInput<typeof ${graphQLConfigExportName}.roots['${name}']>>(),`,
+      })),
   ].sort((a, b) => a.name.localeCompare(b.name));
 
   const importedTypes = Array.from(
     new Set([
       ...types.map((type) => type.type),
-      ...mutationEntries.map((entry) => entry.entity),
-      ...(graphQLConfig.mutations ? [graphQLConfigExportName] : []),
+      ...mutationEntries
+        .filter((entry) => entry.entity !== '__value__')
+        .map((entry) => entry.entity),
+      ...(mutationEntries.length ||
+      Object.values(graphQLConfig.roots ?? {}).some((root) => root.embedded) ||
+      (!argumentSchema && graphQLConfig.mutations)
+        ? [graphQLConfigExportName]
+        : []),
     ]),
   ).sort((a, b) => a.localeCompare(b));
 
-  const mutationConfigLines = mutationEntries.map(
-    ({ entity, name }) =>
-      `'${name}': mutation<
+  const mutationConfigLines = mutationEntries.map(({ entity, field, inputArg, name }) =>
+    entity === '__value__'
+      ? `'${name}': valueMutation<
+  ${mutationInputType(name, field, inputArg)},
+  GraphQLMutationOutput<typeof ${graphQLConfigExportName}.mutations['${name}']>
+>(),`
+      : `'${name}': mutation<
   ${entity},
-  GraphQLMutationInput<typeof ${graphQLConfigExportName}.mutations['${name}']>,
+  ${mutationInputType(name, field, inputArg)},
   GraphQLMutationOutput<typeof ${graphQLConfigExportName}.mutations['${name}']>
 >('${entity}'),`,
   );
 
   const graphQLRoots = Object.fromEntries(
-    Object.entries(roots).map(([name, root]) => [
+    Object.entries({
+      ...roots,
+      ...Object.fromEntries(
+        Object.entries(graphQLConfig.roots ?? {}).filter(([, root]) => root.embedded),
+      ),
+    }).map(([name, root]) => [
       name,
       {
-        connection: root.kind === 'list' ? 'relay' : undefined,
+        connection: 'kind' in root && root.kind === 'list' ? 'relay' : undefined,
+        embedded: graphQLConfig.roots?.[name]?.embedded,
         field: graphQLConfig.roots?.[name]?.field,
-        type: root.type,
+        type: graphQLConfig.roots?.[name]?.type ?? root.type,
       },
     ]),
   );
   const graphQLMutations = Object.fromEntries(
-    mutationEntries.map(({ entity, field, inputArg, name }) => [
+    mutationEntries.map(({ entity, field, inputArg, name, type }) => [
       name,
       {
         entity,
         field,
         ...(inputArg !== undefined ? { inputArg } : null),
+        ...(type !== undefined ? { type } : null),
       },
     ]),
   );
   const graphQLRuntimeConfig = {
+    ...(graphQLConfig.byId ? { byId: graphQLConfig.byId } : null),
     mutations: graphQLMutations,
+    ...(graphQLConfig.nodes !== undefined ? { nodes: graphQLConfig.nodes } : null),
     roots: graphQLRoots,
+    ...(argumentSchema ? { schema: argumentSchema } : null),
   };
 
   const typesBlock = indentBlock(
     formatTypes(
-      types as ReadonlyArray<{
+      transportTypes as ReadonlyArray<{
         fields?: Record<string, any>;
         type: string;
       }>,
@@ -506,16 +696,20 @@ declare module '${clientDeclarationModule}' {
   ): ReturnType<GeneratedCreateFateClient>;
 }
 `;
-  const mutationMapType = graphQLConfig.mutations
-    ? `GraphQLMutationMap<typeof ${graphQLConfigExportName}.mutations>`
-    : 'Record<never, never>';
+  const mutationMapType = argumentSchema
+    ? `{ ${mutationEntries.map(({ field, inputArg, name }) => `${JSON.stringify(name)}: { input: ${mutationInputType(name, field, inputArg)}; output: GraphQLMutationOutput<typeof ${graphQLConfigExportName}.mutations[${JSON.stringify(name)}]> };`).join(' ')} }`
+    : graphQLConfig.mutations
+      ? `GraphQLMutationMap<typeof ${graphQLConfigExportName}.mutations>`
+      : 'Record<never, never>';
   const typeImportLine = importedTypes.length
     ? `import type { ${importedTypes.join(', ')} } from '${moduleName}';\n`
     : '';
 
   return `// @generated by @nkzw/fate/vite
-${typeImportLine}import { clientRoot, createClient, createGraphQLTransport, mutation, type GraphQLMutationInput, type GraphQLMutationMap, type GraphQLMutationOutput } from '${clientModule}';
+${typeImportLine}import { clientRoot, createClient, createGraphQLTransport${Object.values(graphQLConfig.roots ?? {}).some((root) => root.embedded) ? ', clientValueRoot, type GraphQLRootInput, type GraphQLRootOutput' : ''}${mutationEntries.some((entry) => entry.entity !== '__value__') ? ', mutation' : ''}${mutationEntries.some((entry) => entry.entity === '__value__') ? ', valueMutation' : ''}${mutationEntries.length ? ', type GraphQLMutationOutput' : ''}${!argumentSchema && graphQLConfig.mutations ? ', type GraphQLMutationMap' : ''}${!argumentSchema && mutationEntries.length ? ', type GraphQLMutationInput' : ''} } from '${clientModule}';
 
+${argumentSchema ? graphQLArgumentContracts(argumentSchema) : ''}
+${selectionArguments}
 type GraphQLTransportMutations = ${mutationMapType};
 
 const graphQL = ${formatGraphQLObject(graphQLRuntimeConfig)} as const;
@@ -530,7 +724,7 @@ ${rootBlock}
 
 export type GeneratedClientMutations = typeof mutations;
 export type GeneratedClientRoots = typeof roots;
-const hydrationScope = ${JSON.stringify(getHydrationScope(moduleName, roots, types))} as const;
+const hydrationScope = ${JSON.stringify(getHydrationScope(moduleName, argumentSchema ? { argumentSchema, roots } : roots, types))} as const;
 
 export const createFateClient = (options: {
   decodeNodeId?: (type: string, id: string | number) => string | number;
@@ -551,6 +745,7 @@ export const createFateClient = (options: {
     persistence: options.persistence,
     roots,
     transport: createGraphQLTransport<GraphQLTransportMutations>({
+      ${graphQLConfig.byId ? 'byId: graphQL.byId,' : ''}
       decodeNodeId: options.decodeNodeId,
       encodeNodeId: options.encodeNodeId,
       eventSource: options.eventSource,
@@ -559,7 +754,9 @@ export const createFateClient = (options: {
       live: options.live,
       mutations: graphQL.mutations,
       mutateDurably: options.mutateDurably,
+      ${graphQLConfig.nodes !== undefined ? 'nodes: graphQL.nodes,' : ''}
       roots: graphQL.roots,
+      ${argumentSchema ? 'schema: graphQL.schema,' : ''}
       types: ${typesBlock.trimStart()},
       url: options.url,
     }),

@@ -403,6 +403,11 @@ export function createHTTPTransport<
 
   if (liveEnabled) {
     const liveSubscriptions = new Map<string, LiveSubscription>();
+    const reportError = (error: Error | Event) => {
+      for (const subscription of new Set(liveSubscriptions.values())) {
+        reportSubscriptionError(subscription, error);
+      }
+    };
     let liveClient: LiveConnectorClient | undefined;
     let nativeLiveClient:
       | {
@@ -450,6 +455,9 @@ export function createHTTPTransport<
         FateLiveConnectionSubscribeOperation | FateLiveSubscribeOperation
       >();
       const lastEventIds = new Map<string, string>();
+      // Closing the stream ends all of its subscriptions on the server, which
+      // then rejects requests for this connection.
+      let closed = false;
       let opened = false;
       let resolveOpen: (() => void) | undefined;
       let rejectOpen: ((error: Error | Event) => void) | undefined;
@@ -465,22 +473,42 @@ export function createHTTPTransport<
       const source = new EventSourceCtor(sourceUrl.href, { withCredentials: true });
 
       const control = async (controlOperations: Array<FateLiveControlOperation>) => {
-        const response = await fetchImpl(liveEndpointUrl, {
-          body: JSON.stringify({
-            connectionId,
-            operations: controlOperations,
-            version: 1,
-          } satisfies FateLiveControlRequest),
-          headers: await requestHeaders({ 'content-type': 'application/json' }, headers),
-          method: 'POST',
-        });
-        if (!response.ok) {
-          throw await responseError(response);
+        if (closed) {
+          return;
         }
 
-        const payload = assertProtocolResponse(await response.json());
-        for (const result of payload.results) {
-          resultValue(result);
+        try {
+          const controlHeaders = await requestHeaders(
+            { 'content-type': 'application/json' },
+            headers,
+          );
+          if (closed) {
+            return;
+          }
+
+          const response = await fetchImpl(liveEndpointUrl, {
+            body: JSON.stringify({
+              connectionId,
+              operations: controlOperations,
+              version: 1,
+            } satisfies FateLiveControlRequest),
+            headers: controlHeaders,
+            method: 'POST',
+          });
+          if (!response.ok) {
+            throw await responseError(response);
+          }
+
+          const payload = assertProtocolResponse(await response.json());
+          for (const result of payload.results) {
+            resultValue(result);
+          }
+        } catch (error) {
+          // Requests already in flight can fail after shutdown; their errors
+          // must not reach subscriptions on a replacement connection.
+          if (!closed) {
+            throw error;
+          }
         }
       };
 
@@ -491,12 +519,6 @@ export function createHTTPTransport<
       ): Operation => {
         const lastEventId = lastEventIds.get(operation.id);
         return lastEventId ? { ...operation, lastEventId } : operation;
-      };
-
-      const reportError = (error: Error | Event) => {
-        for (const subscription of new Set(liveSubscriptions.values())) {
-          reportSubscriptionError(subscription, error);
-        }
       };
 
       source.addEventListener('open', () => {
@@ -576,6 +598,13 @@ export function createHTTPTransport<
         remove(id) {
           operations.delete(id);
           lastEventIds.delete(id);
+          if (operations.size === 0) {
+            closed = true;
+            source.close();
+            nativeLiveClient = undefined;
+            return;
+          }
+
           void open
             .then(() =>
               control([
@@ -586,10 +615,6 @@ export function createHTTPTransport<
               ]),
             )
             .catch(reportError);
-          if (operations.size === 0) {
-            source.close();
-            nativeLiveClient = undefined;
-          }
         },
       };
 

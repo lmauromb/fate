@@ -46,6 +46,7 @@ export const session = pgTable(
     createdAt: timestamp({ mode: 'date' }).notNull().defaultNow(),
     expiresAt: timestamp({ mode: 'date' }).notNull(),
     id: idColumn().primaryKey(),
+    impersonatedBy: text(),
     ipAddress: text(),
     token: text().notNull(),
     updatedAt: timestamp({ mode: 'date' }).notNull().defaultNow(),
@@ -66,7 +67,6 @@ export const account = pgTable(
     createdAt: timestamp({ mode: 'date' }).notNull().defaultNow(),
     id: idColumn().primaryKey(),
     idToken: text(),
-    issuer: text().notNull(),
     password: text(),
     providerId: text().notNull(),
     refreshToken: text(),
@@ -77,7 +77,22 @@ export const account = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
   },
-  (table) => [uniqueIndex('account_issuer_accountId_key').on(table.issuer, table.accountId)],
+  (table) => [
+    uniqueIndex('account_providerId_accountId_key').on(table.providerId, table.accountId),
+  ],
+);
+
+export const verification = pgTable(
+  'verification',
+  {
+    createdAt: timestamp({ mode: 'date' }).notNull().defaultNow(),
+    expiresAt: timestamp({ mode: 'date' }).notNull(),
+    id: idColumn().primaryKey(),
+    identifier: text().notNull(),
+    updatedAt: timestamp({ mode: 'date' }).notNull().defaultNow(),
+    value: text().notNull(),
+  },
+  (table) => [index('verification_identifier_idx').on(table.identifier)],
 );
 
 export const post = pgTable(
@@ -164,6 +179,7 @@ const schema = {
   sessionRelations,
   user,
   userRelations,
+  verification,
 };
 
 export default schema;

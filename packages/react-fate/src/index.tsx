@@ -1,3 +1,4 @@
+export { alias, type AliasedSelection } from '@nkzw/fate';
 /**
  * The react fate library.
  *
@@ -15,6 +16,7 @@ export {
   createTRPCTransport,
   defer,
   graphqlMutation,
+  GraphQLRequestError,
   mutation,
   toEntityId,
   type ConnectionRef,
@@ -34,6 +36,10 @@ export {
   type ViewRef,
   type InferFateAPI,
   view,
+  when,
+  type ConditionalSelection,
+  type AliasedView,
+  type ParameterizedView,
 } from '@nkzw/fate';
 
 export { FateClient, useFateClient } from './context.tsx';
@@ -42,3 +48,5 @@ export { useLiveListView } from './useLiveListView.tsx';
 export { useView } from './useView.tsx';
 export { useRequest } from './useRequest.tsx';
 export { useListView } from './useListView.tsx';
+
+export { useRequestState } from './useRequestState.tsx';

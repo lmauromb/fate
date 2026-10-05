@@ -18,11 +18,13 @@ _December 9<sup>th</sup> 2025 by [<img src="https://gravatar.com/avatar/77a332a7
 
 </span>
 
-I'm excited to announce the initial alpha release of **_fate_**, a modern data client for React & tRPC. _fate_ combines view composition, normalized caching, data masking, Async React features, and tRPC's type safety.
+I'm excited to announce the initial alpha release of **_fate_**, a modern data client for the web. _fate_ combines view composition, normalized caching, data masking, Async React features, and tRPC's type safety.
 
-## A modern data client for React & tRPC
+<span id="a-modern-data-client-for-react-trpc"></span>
 
-<!--@include: ../parts/intro.md#a-modern-data-client-for-react-trpc-->
+## A modern data client for the web
+
+<!--@include: ../parts/intro.md#a-modern-data-client-for-the-web-->
 
 ## Journey to _fate_
 
@@ -183,16 +185,12 @@ Finally, by using modern Async React, the latest React DevTools features for Sus
 Create a new fate app with Vite+:
 
 ```bash
-vp create fate my-app
+vp create fate
 ```
 
 The template selector can create a Void app with Drizzle, a tRPC app with Drizzle, or a tRPC app with Prisma. The template sources live in the fate repo under [`packages/create-fate/templates/fate`](https://github.com/nkzw-tech/fate/tree/main/packages/create-fate/templates/fate). They feature modern tools to deliver an incredibly fast development experience.
 
 Read about the [Core Concepts](/guide/core-concepts), or jump right in and learn about [Views](/guide/views).
-
-_You can also try a runnable demo directly in your browser:_
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?repo=nkzw-tech/fate)
 
 ## Future
 

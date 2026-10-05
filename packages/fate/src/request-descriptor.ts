@@ -1,3 +1,4 @@
+import { aliasedField, isAliasedSelection } from './alias.ts';
 import {
   applyArgsPayloadToPlan,
   combineArgsPayload,
@@ -13,6 +14,7 @@ import {
   isNodeItem,
   isNodesItem,
   isQueryItem,
+  isValueItem,
   isViewTag,
   type AnyRecord,
   type Request,
@@ -95,10 +97,22 @@ export type QueryRequestDescriptor = Readonly<{
   kind: 'query';
   name: string;
   plan: SelectionPlan;
+  procedure: string;
   queryKey: string;
   refViewNames: ReadonlySet<string>;
   type: string;
   viewSignature: string;
+}>;
+
+export type ValueRequestDescriptor = Readonly<{
+  argsPayload: ResolvedArgsPayload | undefined;
+  kind: 'value';
+  name: string;
+  plan: SelectionPlan;
+  procedure: string;
+  queryKey: string;
+  refViewNames: ReadonlySet<string>;
+  type: string;
 }>;
 
 export type ListRequestDescriptor = Readonly<{
@@ -109,6 +123,7 @@ export type ListRequestDescriptor = Readonly<{
   name: string;
   nodeRefViewNames: ReadonlySet<string>;
   plan: SelectionPlan;
+  procedure: string;
   type: string;
   viewSignature: string;
 }>;
@@ -116,6 +131,7 @@ export type ListRequestDescriptor = Readonly<{
 export type RequestItemDescriptor =
   | NodeRequestDescriptor
   | QueryRequestDescriptor
+  | ValueRequestDescriptor
   | ListRequestDescriptor;
 
 export type RequestDescriptor = Readonly<{
@@ -137,18 +153,24 @@ const getRequestDescriptorKey = (items: ReadonlyArray<RequestItemDescriptor>): s
 
   for (const item of sorted) {
     if (item.kind === 'node') {
-      parts.push(`node:${item.name}:${item.viewSignature}:${item.ids[0]}`);
+      const args = resolvedArgsFromPlan(item.plan);
+      parts.push(
+        `node:${item.name}:${item.viewSignature}:${item.ids[0]}${args ? `:${hashArgs(args)}` : ''}`,
+      );
       continue;
     }
 
     if (item.kind === 'nodes') {
-      parts.push(`node:${item.name}:${item.viewSignature}:${item.ids.map(serializeId).join(',')}`);
+      const args = resolvedArgsFromPlan(item.plan);
+      parts.push(
+        `node:${item.name}:${item.viewSignature}:${item.ids.map(serializeId).join(',')}${args ? `:${hashArgs(args)}` : ''}`,
+      );
       continue;
     }
 
-    if (item.kind === 'query') {
+    if (item.kind === 'query' || item.kind === 'value') {
       parts.push(
-        `query:${item.name}:${item.viewSignature}:${
+        `${item.kind}:${item.name}:${item.kind === 'query' ? item.viewSignature : ''}:${
           item.argsPayload ? hashArgs(item.argsPayload) : ''
         }`,
       );
@@ -164,7 +186,7 @@ const getRequestDescriptorKey = (items: ReadonlyArray<RequestItemDescriptor>): s
     }
   }
 
-  return parts.join('$');
+  return `${parts.join('$')}|${JSON.stringify(sorted.map((item) => ['procedure' in item ? item.procedure : item.type, [...item.plan.paths].sort()]))}`;
 };
 
 export const createRequestDescriptor = (
@@ -173,8 +195,31 @@ export const createRequestDescriptor = (
 ): RequestDescriptor => {
   const items: Array<RequestItemDescriptor> = [];
 
-  for (const [name, item] of Object.entries(request)) {
-    const type = getRootType(name);
+  for (const [name, rawItem] of Object.entries(request)) {
+    const item = isAliasedSelection(rawItem) ? rawItem.selection : rawItem;
+    const procedure = isAliasedSelection(rawItem) ? rawItem.field : name;
+    if (isAliasedSelection(rawItem)) {
+      aliasedField(name, procedure);
+    }
+    const type = getRootType(procedure);
+
+    if (isValueItem(item)) {
+      const plan =
+        item.value === true
+          ? { args: new Map(), live: new Map(), paths: new Set<string>() }
+          : getSelectionPlan(item.value as View<any, any>, null);
+      items.push({
+        argsPayload: item.args,
+        kind: 'value',
+        name,
+        plan,
+        procedure,
+        queryKey: `${getRootDescriptorKey(procedure, item.args, plan)}#${[...plan.paths].sort().join(',')}`,
+        refViewNames: new Set(),
+        type,
+      });
+      continue;
+    }
 
     if (isNodeItem(item)) {
       items.push({
@@ -182,7 +227,7 @@ export const createRequestDescriptor = (
         kind: 'node',
         name,
         plan: getSelectionPlan(item.view, null),
-        refViewNames: new Set(getViewNames(item.view)),
+        refViewNames: getViewNames(item.view),
         type,
         viewSignature: getViewSignature(item.view),
       });
@@ -195,7 +240,7 @@ export const createRequestDescriptor = (
         kind: 'nodes',
         name,
         plan: getSelectionPlan(item.view, null),
-        refViewNames: new Set(getViewNames(item.view)),
+        refViewNames: getViewNames(item.view),
         type,
         viewSignature: getViewSignature(item.view),
       });
@@ -209,7 +254,8 @@ export const createRequestDescriptor = (
         kind: 'query',
         name,
         plan,
-        queryKey: getRootDescriptorKey(name, argsPayload, plan),
+        procedure,
+        queryKey: getRootDescriptorKey(procedure, argsPayload, plan),
         refViewNames: getRootViewNames(item.view),
         type,
         viewSignature: getViewSignature(item.view),
@@ -227,10 +273,11 @@ export const createRequestDescriptor = (
       argsPayload,
       hasItems,
       kind: 'list',
-      listKey: getRootListDescriptorKey(name, argsPayload, plan),
+      listKey: getRootListDescriptorKey(procedure, argsPayload, plan),
       name,
       nodeRefViewNames: getRootViewNames(nodeView),
       plan,
+      procedure,
       type,
       viewSignature: getViewSignature(item.list),
     });

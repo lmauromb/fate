@@ -1,5 +1,7 @@
+import { schemaField } from './alias.ts';
 import { filterConnectionArgs } from './args.ts';
 import type { FateClient } from './client.ts';
+import { getFieldKey, getStoragePath } from './field-key.ts';
 import {
   decodeClientHydrationState,
   decodeHydrationValue,
@@ -105,6 +107,7 @@ const stamp = (time: number) => String(time).padStart(16, '0');
 const recordKey = (id: string) => `r:${id}`;
 const listKey = (id: string) => `l:${id}`;
 const queryKey = (id: string) => `q:${id}`;
+const valueKey = (id: string) => `v:${id}`;
 const pathsOverlap = (path: string, selected: string) =>
   path === selected || path.startsWith(`${selected}.`) || selected.startsWith(`${path}.`);
 const projectRecord = (value: RecordValue, paths: Array<string>): RecordValue => {
@@ -306,11 +309,12 @@ export class PersistenceCache {
     const previousCoverage = new Map(previous?.coverage);
     const previousLists = new Map(previous?.lists);
     const ids = new Set<string>(previousRecords.keys());
-    const config = this.client.getTypeConfig(command.entity);
+    const config =
+      command.entity === '__value__' ? undefined : this.client.getTypeConfig(command.entity);
     for (const input of [command.input, command.optimistic]) {
       if (input) {
         try {
-          const id = config.getId(input);
+          const id = config?.getId(input);
           if (id != null) {
             ids.add(toEntityId(command.entity, id));
           }
@@ -631,6 +635,9 @@ export class PersistenceCache {
     const readNode = async (key: string): Promise<unknown> => {
       await this.step();
       if (readsMemory) {
+        if (key.startsWith('v:')) {
+          return this.client.getPersistenceValue(key.slice(2));
+        }
         if (this.flushingNodes.values.has(key)) {
           const incoming = this.flushingNodes.values.get(key);
           const base = this.flushingNodes.listBases.get(key);
@@ -759,8 +766,22 @@ export class PersistenceCache {
         if (typeof id === 'string') {
           queue.push({ id, paths, plan: item.plan, prefix: '' });
         }
+      } else if (item.kind === 'value') {
+        const key = valueKey(item.queryKey);
+        const value = await readNode(key);
+        if (value === undefined) {
+          complete = false;
+          continue;
+        }
+        nodes.set(key, { paths: new Set(), value });
       } else if (item.kind === 'list') {
-        await addList(item.listKey, paths, item.plan, '');
+        const key = valueKey(`list:${item.listKey}`);
+        const nullValue = await readNode(key);
+        if (nullValue !== undefined) {
+          nodes.set(key, { paths: new Set(), value: nullValue });
+        } else {
+          await addList(item.listKey, paths, item.plan, '');
+        }
       }
     }
     for (let index = 0; index < queue.length; index++) {
@@ -781,15 +802,16 @@ export class PersistenceCache {
         complete = false;
         continue;
       }
+      const storagePaths = paths.map((path) => getStoragePath(path, plan, prefix));
       if (
-        paths.some(
+        storagePaths.some(
           (path) =>
             !record.paths.some((covered) => path === covered || path.startsWith(`${covered}.`)),
         )
       ) {
         complete = false;
       }
-      const all = new Set([...(seen?.paths ?? []), ...paths]);
+      const all = new Set([...(seen?.paths ?? []), ...storagePaths]);
       nodes.set(key, { paths: all, value: projectRecord(record, [...all]) });
       const groups = new Map<string, Array<string>>();
       for (const path of needed) {
@@ -811,7 +833,7 @@ export class PersistenceCache {
           for (const child of children) {
             const [field, ...rest] = child.split('.');
             walk(
-              (value as AnyRecord)[field],
+              (value as AnyRecord)[getFieldKey(`${childPrefix}.${field}`, plan)],
               rest.length ? [rest.join('.')] : [],
               `${childPrefix}.${field}`,
             );
@@ -820,14 +842,15 @@ export class PersistenceCache {
       };
       for (const [field, children] of groups) {
         const childPrefix = prefix ? `${prefix}.${field}` : field;
-        const value = record.record[field];
+        const storageKey = getFieldKey(childPrefix, plan);
+        const value = record.record[storageKey];
         if (Array.isArray(value)) {
-          const nestedKey = getListKey(id, field, plan.args.get(childPrefix)?.hash);
+          const nestedKey = getListKey(id, schemaField(field), plan.args.get(childPrefix)?.hash);
           const list = (await readNode(listKey(nestedKey))) as List | undefined;
           if (list) {
             const node = nodes.get(key)!;
             const projected = node.value as RecordValue;
-            projected.record[field] = list.ids.map(createNodeRef);
+            projected.record[storageKey] = list.ids.map(createNodeRef);
             await addList(nestedKey, children, plan, childPrefix);
           } else {
             walk(value, children, childPrefix);
@@ -856,6 +879,7 @@ export class PersistenceCache {
           const state: ClientHydrationState = {
             rootLists: [],
             rootRequests: [],
+            rootValues: [],
             store: { coverage: [], lists: [], records: [] },
           };
           if (key.startsWith('r:')) {
@@ -873,6 +897,8 @@ export class PersistenceCache {
                 (state.rootLists as Array<unknown>).push([item.type, [id]]);
               }
             }
+          } else if (key.startsWith('v:')) {
+            (state.rootValues as Array<unknown>).push([id, node.value]);
           } else {
             (state.rootRequests as Array<unknown>).push([id, node.value]);
           }

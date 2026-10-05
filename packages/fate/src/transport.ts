@@ -64,12 +64,13 @@ export interface Transport<Mutations extends TransportMutations = EmptyTransport
   ): Promise<{
     items: Array<{ cursor: string | undefined; node: unknown }>;
     pagination: Pagination;
-  }>;
+  } | null>;
   fetchQuery?(proc: string, select: Iterable<string>, args?: ResolvedArgsPayload): Promise<unknown>;
   mutate?<K extends Extract<keyof Mutations, string>>(
     proc: K,
     input: Mutations[K]['input'],
     select: Set<string>,
+    selectionArgs?: ResolvedArgsPayload,
   ): Promise<Mutations[K]['output']>;
   /**
    * Deliver through an endpoint that durably deduplicates this identity. Required
@@ -80,7 +81,10 @@ export interface Transport<Mutations extends TransportMutations = EmptyTransport
     input: Mutations[K]['input'],
     select: Set<string>,
     identity: MutationIdentity,
+    selectionArgs?: ResolvedArgsPayload,
   ): Promise<Mutations[K]['output']>;
+  /** Receive mutation selection arguments separately from the mutation input. */
+  separateMutationSelectionArgs?: boolean;
   subscribeById?(
     type: string,
     id: string | number,
@@ -96,6 +100,8 @@ export interface Transport<Mutations extends TransportMutations = EmptyTransport
     selectionArgs: ResolvedArgsPayload | undefined,
     handlers: LiveConnectionEventHandlers,
   ): () => void;
+  /** Accept resultName:schemaField selection paths and return records with those encoded keys. */
+  supportsAliases?: boolean;
 }
 
 /**

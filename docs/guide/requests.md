@@ -180,3 +180,91 @@ fate.hydrate(loaderData.fate, { merge: 'replace' });
 `preserve-existing` recursively combines plain scalar objects while keeping browser values on conflicts. Arrays, dates, entity references, and list windows are atomic: an existing browser value wins as a whole. Replaying a snapshot is safe and does not notify subscribers when durable cache state is unchanged.
 
 Do not reuse request-scoped snapshots across users. Dehydrate after awaited route preloading: snapshots are point-in-time values and do not stream cache patches for data that resolves later. Hydration and dehydration reject clients with in-flight requests, so hydrate the initial snapshot before rendering.
+
+## Observing Request State
+
+React's `useRequestState(request, options)` observes a request without suspending.
+It returns `status`, `data`, `error`, and `isFetching`. Status is `pending`, `ready`,
+or `error` for an enabled network request. An initial failure exposes the original
+error rather than throwing during render. Request data contains the same refs as
+`useRequest`; resolve them with `useView`.
+
+Use `{ enabled: false }` for an empty search or an inactive screen. The status is
+`disabled`, data is undefined, and no request starts. Changing `enabled` to true
+starts the request. Equivalent inline request objects do not cause repeat fetches.
+
+Use `{ mode: 'cache-only' }` to observe already-cached data. A complete selection
+has status `ready`; an incomplete selection has status `missing` and undefined
+data. A successful nullable root remains `ready` with a null value. Cache-only
+requests never fetch, and their view refs cannot fetch missing fields either.
+Mounted observers retain their request's records until unmount.
+
+Outside React, `client.observeRequest(request, options)` exposes `getSnapshot()`
+and `subscribe(listener)`. The first subscriber starts an enabled request;
+unsubscribing releases its retention. Reading a snapshot alone never starts work.
+
+Every request state includes a stable `refetch()` function. It forces a network
+request, returns a promise for the completed result, and rejects with the original
+error on failure. Concurrent calls share pending work. During refresh, complete
+cached data stays available with `status: 'ready'` and `isFetching: true`. A failed
+refresh keeps that data and exposes `error`; the next attempt clears the error.
+`stale-while-revalidate` observers track the entire background request the same
+way, including failures. Disabled and cache-only observers reject explicit
+refetches without fetching; enable the request or change its mode first.
+
+```ts
+const state = useRequestState(request, { mode: 'stale-while-revalidate' });
+// Render state.data, state.isFetching, and state.error independently.
+await state.refetch(); // Also usable from a refresh button or retry action.
+```
+
+Overlapping reads use their network start order when normalizing responses. An
+older response cannot overwrite a field already supplied by a newer response or
+a later confirmed write. It may still fill other fields. Root results and list
+replacements also retain the newer result. Optimistic layers remain visible over
+incoming confirmed data; rolling them back reveals that data, while committing a
+mutation protects its confirmed fields from older requests.
+
+### Aliases
+
+Use `alias(sourceField, selection)` to select one schema field under multiple
+result names, with independent arguments:
+
+```ts
+const GamesView = view<User>()({
+  activeGames: alias('games', {
+    args: { first: 20, status: 'Active' },
+    items: { node: GameView },
+    pagination: { hasNext: true, nextCursor: true },
+  }),
+  waitingGames: alias('games', {
+    args: { first: 20, status: 'Waiting' },
+    items: { node: GameView },
+  }),
+  displayName: alias('name', true),
+});
+
+const request = { currentUser: alias('viewer', { view: GamesView }) };
+```
+
+Source fields, nested selections, result types, and generated root argument
+contracts remain checked. Alias names affect the returned shape; normalized
+identity uses the source field and its arguments. An ordinary selection with the
+same arguments shares the cached data. Connection filters identify separate
+cache slots and pagination state. Conflicting response names or arguments in a
+composed view fail during planning. `id` and `__typename` are reserved result
+names because fate needs them for entity identity.
+
+GraphQL emits native aliases, including inside mutation selections, so multiple
+variants execute in one operation. Native HTTP, tRPC, and custom transports
+receive compatible reads with ordinary schema field names; conflicting variants
+may require multiple reads or subscriptions. These fallback reads are independent
+server operations. A mutation that needs multiple variants requires native alias
+support and otherwise rejects before executing. A simple rename is lowered for
+native mutations without repeating the action.
+
+Custom transports can set `supportsAliases: true` to handle the full selection in
+one operation. Selection path segments and corresponding argument keys then use
+`resultName:schemaField`, and returned records must use those same encoded keys.
+GraphQL performs that conversion automatically. Applications consume the declared
+result names, never the encoded transport names.

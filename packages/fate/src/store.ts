@@ -1,4 +1,5 @@
 import ViewDataCache from './cache.ts';
+import { argumentFieldKey } from './field-key.ts';
 import {
   cloneMask,
   diffPaths,
@@ -61,7 +62,7 @@ export type StoreChange =
 
 const listKeySeparator = ' __fate__ ';
 
-type ListKeyParts = Readonly<{ field: string; ownerId: EntityId }>;
+type ListKeyParts = Readonly<{ field: string; hash?: string; ownerId: EntityId }>;
 
 const decodeListKeyPart = (part: string): string => {
   try {
@@ -85,10 +86,11 @@ const parseListKey = (key: string): ListKeyParts | null => {
     return null;
   }
 
-  const [ownerId, field] = parts;
+  const [ownerId, field, hash] = parts;
 
   return {
     field: decodeListKeyPart(field),
+    hash: hash === 'default' ? undefined : decodeListKeyPart(hash),
     ownerId: decodeListKeyPart(ownerId),
   };
 };
@@ -215,12 +217,17 @@ export class Store {
   private rebase: Snapshots | undefined;
 
   constructor(
-    private readonly onRebase?: (ids: ReadonlySet<EntityId>) => void,
+    private readonly onRebase?: (ids: ReadonlySet<EntityId>, lists: ReadonlySet<string>) => void,
     private readonly onChange?: (change: StoreChange) => void,
   ) {}
 
   get hasOptimisticUpdates(): boolean {
     return this.optimisticLayers.size > 0;
+  }
+
+  /** @internal Whether a temporary optimistic layer is being replayed. */
+  get isRecordingOptimistic(): boolean {
+    return this.recordingLayer !== undefined;
   }
 
   get isRebasing(): boolean {
@@ -264,9 +271,9 @@ export class Store {
             const owner = parseListKey(key);
             if (owner) {
               if (!records.has(owner.ownerId)) {
-                records.set(owner.ownerId, new Set([owner.field]));
+                records.set(owner.ownerId, new Set([argumentFieldKey(owner.field, owner.hash)]));
               } else {
-                records.get(owner.ownerId)?.add(owner.field);
+                records.get(owner.ownerId)?.add(argumentFieldKey(owner.field, owner.hash));
               }
             }
           } else if (before) {
@@ -274,7 +281,7 @@ export class Store {
           }
         }
         this.rebase = undefined;
-        this.onRebase?.(new Set(records.keys()));
+        this.onRebase?.(new Set(records.keys()), lists);
         for (const [id, paths] of records) {
           this.notify(id, paths, false);
         }
@@ -469,6 +476,11 @@ export class Store {
       lists: [...(this.listKeysByReferencedEntity.get(id) ?? [])],
       records: [...(this.recordReferencesByTarget.get(id)?.keys() ?? [])],
     };
+  }
+
+  /** @internal List keys whose result depends on this entity's coverage. */
+  getListKeysForEntity(id: EntityId): ReadonlyArray<string> {
+    return [...(this.listKeysByReferencedEntity.get(id) ?? [])];
   }
 
   /** @internal Read one confirmed record without copying the cache. */

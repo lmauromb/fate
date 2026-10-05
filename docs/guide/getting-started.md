@@ -1,14 +1,16 @@
 # Getting Started
 
+Create a new fate app from a template, or install it in an existing React or Vue project. For an overview of the ideas behind fate, read [Why fate?](/guide/why-fate).
+
 ## Template
 
 Create a new fate app with Vite+:
 
 ```bash
-vp create fate my-app
+vp create fate
 ```
 
-Explore the [fate stack](https://stack.fate.technology) to see the tools included in your new project.
+Explore the [fate stack](https://fate.technology/#stack) to see the tools included in your new project.
 
 The template selector can create a React or Vue client for a Void app with Drizzle, a tRPC app with Drizzle or Prisma, a GraphQL app with Prisma, or a fate client for an existing GraphQL server. React is the default UI framework; pass `--framework vue` or choose Vue in the template selector to create a Vue app. The template sources live in the fate repo under [`packages/create-fate/templates/fate`](https://github.com/nkzw-tech/fate/tree/main/packages/create-fate/templates/fate). They feature modern tools to deliver an incredibly fast development experience.
 
@@ -67,11 +69,3 @@ yarn add @nkzw/fate
 ```
 
 :::
-
-> [!WARNING]
->
-> **_fate_** is currently in alpha and not production ready. If something doesn't work for you, please open a pull request.
-
-If you'd like to try the example app in GitHub Codespaces, click the button below:
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?repo=nkzw-tech/fate)

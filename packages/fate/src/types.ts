@@ -1,4 +1,6 @@
+import type { AliasedSelection, AliasedView } from './alias.ts';
 import { FateMutations } from './mutation.ts';
+import type { ConditionalSelection } from './when.ts';
 
 /** Canonical runtime name for an entity type as returned by the server. */
 export type TypeName = string;
@@ -31,6 +33,7 @@ export declare const __FateMutationInputBrand: unique symbol;
 export declare const __FateMutationResultBrand: unique symbol;
 export declare const __FateRootResultBrand: unique symbol;
 export declare const __FateRootTypeBrand: unique symbol;
+export declare const __FateRootArgsBrand: unique symbol;
 export declare const __FateDeferredBrand: unique symbol;
 
 type __ViewEntityAnchor<T extends Entity> = {
@@ -115,14 +118,17 @@ export type RelationDescriptor =
   /** Field stores a scalar value that does not link to another type. */
   | 'scalar'
   /** Field points to a single entity of the given type. */
-  | { type: string }
+  | { possibleTypes?: ReadonlyArray<string>; type: string }
+  /** Field contains an object without entity identity. */
+  | { embedded: string }
   /** Field holds a list of entities of the given type. */
-  | { listOf: string };
+  | { array?: boolean; listOf: string; possibleTypes?: ReadonlyArray<string> };
 
 /** Configuration for a server entity type used by the client cache. */
 export type TypeConfig = {
   fields?: Record<string, RelationDescriptor>;
   getId: (record: unknown) => string | number;
+  possibleTypes?: ReadonlyArray<string>;
   type: string;
 };
 
@@ -173,8 +179,10 @@ type PlainObjectSelectionField<V> =
       : true;
 
 type PlainObjectSelection<T> = {
-  [K in keyof T]?: PlainObjectSelectionField<T[K]>;
-};
+  [K in keyof T]?:
+    | PlainObjectSelectionField<T[K]>
+    | ConditionalSelection<boolean, PlainObjectSelectionField<T[K]>>;
+} & { readonly [key: string]: unknown };
 
 type ConnectionSelectionBase<T extends Entity> = Readonly<{
   items: Readonly<{
@@ -211,7 +219,11 @@ type SelectionFieldValue<T extends Entity, K extends keyof T> =
 
 type DeferrableSelectionFieldValue<T extends Entity, K extends keyof T> =
   | SelectionFieldValue<T, K>
-  | DeferredSelection<SelectionFieldValue<T, K>>;
+  | DeferredSelection<SelectionFieldValue<T, K>>
+  | ConditionalSelection<
+      boolean,
+      SelectionFieldValue<T, K> | DeferredSelection<SelectionFieldValue<T, K>>
+    >;
 
 type SelectionShape<T extends Entity> = {
   [K in keyof T as K extends '__typename' ? never : K]?: DeferrableSelectionFieldValue<T, K>;
@@ -225,7 +237,57 @@ type SelectionViewSpread<T extends Entity> = {
 };
 
 /** Declarative selection of the fields a view needs from an entity. */
-export type Selection<T extends Entity> = SelectionShape<T> & SelectionViewSpread<T>;
+export type Selection<T extends Entity> = SelectionShape<T> &
+  SelectionViewSpread<T> & { readonly [key: string]: unknown };
+
+type SelectionMetadata =
+  | ViewTag
+  | 'args'
+  | 'live'
+  | typeof __FateEntityBrand
+  | typeof __FateSelectionBrand;
+type InvalidSelectedValue<T, S> = S extends true
+  ? never
+  : S extends DeferredSelection<infer Value>
+    ? InvalidSelectedValue<T, Value>
+    : S extends SelectionArgs
+      ? Exclude<keyof S, 'args'> extends never
+        ? never
+        : InvalidSelectionObject<T, S>
+      : InvalidSelectionObject<T, S>;
+type InvalidSelectionObject<T, S> = S extends object
+  ? NonNullable<T> extends Array<infer Item>
+    ? S extends { items: { node: infer Node } }
+      ? InvalidSelection<Item, Node>
+      : InvalidSelection<Item, S>
+    : NonNullable<T> extends object
+      ? InvalidSelection<NonNullable<T>, S>
+      : 'selection'
+  : 'selection';
+type InvalidSelectionEntry<T, K, S> =
+  S extends ConditionalSelection<boolean, infer Value>
+    ? InvalidSelectionEntry<T, K, Value>
+    : S extends AliasedView<infer V>
+      ? T extends ViewEntity<V>
+        ? never
+        : K
+      : S extends AliasedSelection<infer Field, infer Value>
+        ? Field extends keyof T
+          ? InvalidSelectedValue<T[Field], Value>
+          : K
+        : K extends keyof T
+          ? InvalidSelectedValue<T[K], S>
+          : K;
+
+type InvalidSelection<T, S> = 0 extends 1 & S
+  ? never
+  : { [K in Exclude<keyof S, SelectionMetadata>]-?: InvalidSelectionEntry<T, K, S[K]> }[Exclude<
+      keyof S,
+      SelectionMetadata
+    >];
+
+export type ValidateSelection<T extends Entity, S> =
+  InvalidSelection<T, S> extends never ? unknown : never;
 
 /** Extracts the selection type that was used to build a view. */
 export type SelectionOf<V> = V extends {
@@ -236,6 +298,7 @@ export type SelectionOf<V> = V extends {
 
 /** View payload stored on a view tag containing the raw selection used to mask data. */
 export type ViewPayload<T extends Entity, S extends Selection<T> = Selection<T>> = Readonly<{
+  definition?: string;
   select: S;
   [ViewKind]: true;
 }>;
@@ -303,6 +366,21 @@ type ConnectionMask<T extends Entity, S> = S extends {
 type EntityName<T> = T extends { __typename: infer N extends string } ? N : never;
 
 /** Recursively applies a view selection to an entity to mask fields that aren't selected. */
+type ConditionalMask<C extends boolean, Value> = C extends true ? Value : undefined;
+type MaskSelectionEntry<T, K, S> = [S] extends [never]
+  ? NonNullish<T>[Extract<K, keyof T>]
+  : S extends ConditionalSelection<infer C, infer Value>
+    ? ConditionalMask<C, MaskSelectionEntry<T, K, Value>>
+    : S extends AliasedView<infer V>
+      ? ViewRef<ViewEntityName<V>>
+      : S extends AliasedSelection<infer Field, infer Value>
+        ? Mask<NonNullish<T>[Extract<Field, keyof T>], Value>
+        : S extends true
+          ? NonNullish<T>[Extract<K, keyof T>]
+          : S extends DeferredSelection<infer Value>
+            ? Deferred<Mask<NonNullish<T>[Extract<K, keyof T>], Value>>
+            : Mask<NonNullish<T>[Extract<K, keyof T>], Extract<S, object>>;
+
 type MaskNonNullish<T, S> =
   T extends Array<infer U extends Entity>
     ? S extends true
@@ -320,15 +398,15 @@ type MaskNonNullish<T, S> =
             ? ViewRef<EntityName<NonNullish<T>>>
             : ViewRef<EntityName<NonNullable<T>>>
           : {
-              [K in keyof S as K extends 'args' ? never : K]: S[K] extends true
-                ? NonNullish<T>[Extract<K, keyof T>]
-                : S[K] extends DeferredSelection<infer DeferredSelectionValue>
-                  ? Deferred<Mask<NonNullish<T>[Extract<K, keyof T>], DeferredSelectionValue>>
-                  : Mask<NonNullish<T>[Extract<K, keyof T>], Extract<S[K], object>>;
+              [K in keyof S as K extends 'args' ? never : K]: MaskSelectionEntry<T, K, S[K]>;
             } & (T extends Entity ? Pick<NonNullish<T>, '__typename'> : Record<never, never>)
         : T;
 
-export type Mask<T, S> = WithNullish<T, MaskNonNullish<NonNullish<T>, S>>;
+export type Mask<T, S> = S extends SelectionArgs
+  ? Exclude<keyof S, 'args'> extends never
+    ? T
+    : WithNullish<T, MaskNonNullish<NonNullish<T>, S>>
+  : WithNullish<T, MaskNonNullish<NonNullish<T>, S>>;
 
 /** Entity type captured from a view definition. */
 export type ViewEntity<V> = V extends View<infer T, any> ? T : never;
@@ -355,6 +433,11 @@ export type QueryItem<V extends View<any, any>> = Readonly<{
   view: V;
 }>;
 
+export type ValueItem = Readonly<{
+  args?: Record<string, unknown>;
+  value: true | Record<string, unknown>;
+}>;
+
 /** Definition of a node request with one explicit ID for fetching data from the backend. */
 export type NodeItem<V extends View<any, any>> = Readonly<{
   id: string | number;
@@ -371,18 +454,19 @@ type RequestItem =
   | ListItem<View<any, any>>
   | NodeItem<View<any, any>>
   | NodesItem<View<any, any>>
-  | QueryItem<View<any, any>>;
+  | QueryItem<View<any, any>>
+  | ValueItem;
 
 /** Collection of node and list requests describing the data a screen needs. */
-export type Request = Record<string, RequestItem>;
+export type Request = Record<string, RequestItem | AliasedSelection<string, RequestItem>>;
 
 type AnyView = View<any, any>;
 type AnyListItem = ListItem<AnyView>;
 type AnyQueryItem = QueryItem<AnyView>;
 type AnyNodeItem = NodeItem<AnyView>;
 type AnyNodesItem = NodesItem<AnyView>;
-type AnyRequestItem = AnyListItem | AnyNodeItem | AnyNodesItem | AnyQueryItem;
-type AnyRequest = Record<string, AnyRequestItem>;
+type AnyRequestItem = AnyListItem | AnyNodeItem | AnyNodesItem | AnyQueryItem | ValueItem;
+type AnyRequest = Record<string, AnyRequestItem | AliasedSelection<string, AnyRequestItem>>;
 
 /**
  * Typed result returned by `useRequest` and `FateClient.request`, mapping each
@@ -392,36 +476,68 @@ type ConnectionNodeType<Root> = Root extends { items?: { node?: infer Node } }
   ? ViewEntityName<Node & View<any, any>>
   : never;
 
-type ListResult<
-  Item extends AnyRequestItem,
-  Type extends TypeName,
-  Result,
-> = Item extends AnyNodeItem
-  ? ViewRef<Type>
-  : Item extends AnyNodesItem
-    ? Array<ViewRef<Type>>
-    : Item extends AnyQueryItem
-      ? Result extends null
-        ? ViewRef<Type> | null
-        : ViewRef<Type>
-      : Item extends AnyListItem
-        ? Item['list'] extends { items?: { node?: View<any, any> } }
-          ? Readonly<{
-              items: ReadonlyArray<{
-                cursor?: string | undefined;
-                node: ViewRef<ConnectionNodeType<Item['list']>>;
-              }>;
-              pagination?: Pagination;
-            }>
-          : Array<ViewRef<Type>>
-        : never;
+type NullableRootResult<Result> = unknown extends Result
+  ? never
+  : null extends Result
+    ? null
+    : never;
+
+type ListResult<Item extends AnyRequestItem, Type extends TypeName, Result> = Item extends ValueItem
+  ? Result
+  : Item extends AnyNodeItem
+    ? ViewRef<Type>
+    : Item extends AnyNodesItem
+      ? Array<ViewRef<Type>>
+      : Item extends AnyQueryItem
+        ? Result extends null
+          ? ViewRef<Type> | null
+          : ViewRef<Type>
+        : Item extends AnyListItem
+          ?
+              | (Item['list'] extends { items?: { node?: View<any, any> } }
+                  ? Readonly<{
+                      items: ReadonlyArray<{
+                        cursor?: string | undefined;
+                        node: ViewRef<ConnectionNodeType<Item['list']>>;
+                      }>;
+                      pagination?: Pagination;
+                    }>
+                  : Array<ViewRef<Type>>)
+              | NullableRootResult<Result>
+          : never;
 
 /**
  * The result of a `FateClient.request` and `useRequest` call, mapping each
  * request key to its corresponding result.
  */
 export type RequestResult<R extends FateRoots, Q extends AnyRequest> = {
-  [K in keyof Q]: K extends keyof R ? ListResult<Q[K], RootType<R[K]>, RootResult<R[K]>> : never;
+  [K in keyof Q]: Q[K] extends AliasedSelection<infer Field, infer Item extends AnyRequestItem>
+    ? Field extends keyof R
+      ? ListResult<Item, RootType<R[Field]>, RootResult<R[Field]>>
+      : never
+    : K extends keyof R
+      ? ListResult<Extract<Q[K], AnyRequestItem>, RootType<R[K]>, RootResult<R[K]>>
+      : never;
+};
+
+/** Applies generated argument contracts while preserving inference of request results. */
+type CheckRequestItem<Roots extends FateRoots, K, Item> = Item extends AnyNodeItem | AnyNodesItem
+  ? unknown
+  : K extends keyof Roots
+    ? Roots[K] extends { readonly [__FateRootArgsBrand]?: infer Args }
+      ? string extends keyof Args
+        ? unknown
+        : (Record<never, never> extends Args ? { args?: Args } : { args: Args }) &
+            (Item extends { args: infer Actual }
+              ? { args: { [Extra in Exclude<keyof Actual, keyof Args>]: never } }
+              : unknown)
+      : unknown
+    : unknown;
+
+export type CheckedRequest<Roots extends FateRoots, R extends Request> = R & {
+  [K in keyof R]: R[K] extends AliasedSelection<infer Field, infer Item>
+    ? { selection: CheckRequestItem<Roots, Field, Item> }
+    : CheckRequestItem<Roots, K, R[K]>;
 };
 
 /** Indicates whether a request item represents an explicit node ID. */
@@ -438,6 +554,10 @@ export function isQueryItem(item: AnyRequestItem): item is AnyQueryItem {
   return 'view' in item && !('id' in item) && !('ids' in item);
 }
 
+export function isValueItem(item: AnyRequestItem): item is ValueItem {
+  return 'value' in item;
+}
+
 /** Brand used on root definitions to mark their identity in the d.ts output. */
 export const RootKind = '__fate__root';
 
@@ -445,7 +565,8 @@ export const RootKind = '__fate__root';
 export const MutationKind = '__fate__mutation';
 
 /** Metadata describing a root query for a particular entity and result shape. */
-export type RootDefinition<Type extends TypeName, Result> = Readonly<{
+export type RootDefinition<Type extends TypeName, Result, Args = AnyRecord> = Readonly<{
+  readonly [__FateRootArgsBrand]?: Args;
   [RootKind]: true;
   type: Type;
 }> &

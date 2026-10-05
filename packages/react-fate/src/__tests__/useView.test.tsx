@@ -2,8 +2,8 @@
  * @vitest-environment happy-dom
  */
 
-import { createClient, FateRoots, mutation, view, type Transport } from '@nkzw/fate';
-import { act, Suspense } from 'react';
+import { createClient, FateRoots, mutation, view, type Transport, type ViewRef } from '@nkzw/fate';
+import { act, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, test, vi } from 'vite-plus/test';
 import { FateClient } from '../context.tsx';
@@ -108,6 +108,133 @@ test('updates when nested entities change', () => {
   expect(container.textContent).toBe('Banana');
   expect(renders[0]).toBe('Apple');
   expect(renders.at(-1)).toBe('Banana');
+});
+
+test('updates when an entity added to a nested list changes', async () => {
+  type Item = { __typename: 'Item'; id: string; name: string };
+  type Board = { __typename: 'Board'; id: string; items: Array<Item> };
+
+  const client = createClient({
+    roots: {},
+    transport: {
+      async fetchById() {
+        return [];
+      },
+    },
+    types: [{ fields: { items: { listOf: 'Item' } }, type: 'Board' }, { type: 'Item' }],
+  });
+
+  const BoardView = view<Board>()({
+    id: true,
+    items: { id: true, name: true },
+  });
+  const paths = new Set(['__typename', 'id', 'items.id', 'items.name']);
+
+  client.write('Board', { __typename: 'Board', id: 'board', items: [] }, paths);
+  const boardRef = client.ref<Board>('Board', 'board', BoardView);
+
+  const Component = () => {
+    const board = useView(BoardView, boardRef);
+    return <span>{board.items.map((item) => item.name).join(',') || 'empty'}</span>;
+  };
+
+  const container = document.createElement('div');
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      <StrictMode>
+        <FateClient client={client}>
+          <Suspense fallback={null}>
+            <Component />
+          </Suspense>
+        </FateClient>
+      </StrictMode>,
+    );
+  });
+  expect(container.textContent).toBe('empty');
+
+  await act(async () => {
+    client.write(
+      'Board',
+      {
+        __typename: 'Board',
+        id: 'board',
+        items: [{ __typename: 'Item', id: 'item-1', name: 'Apple' }],
+      },
+      paths,
+    );
+  });
+  expect(container.textContent).toBe('Apple');
+
+  await act(async () => {
+    client.write(
+      'Item',
+      { __typename: 'Item', id: 'item-1', name: 'Banana' },
+      new Set(['__typename', 'id', 'name']),
+    );
+  });
+  expect(container.textContent).toBe('Banana');
+});
+
+test('updates after switching to a ref that was not cached yet', async () => {
+  const { promise, resolve } = Promise.withResolvers<Array<Partial<Post>>>();
+  const client = createClient({
+    roots: {},
+    transport: {
+      fetchById: vi.fn(() => promise),
+    },
+    types: [{ type: 'Post' }],
+  });
+
+  const PostView = view<Post>()({
+    content: true,
+    id: true,
+  });
+
+  client.write(
+    'Post',
+    { __typename: 'Post', content: 'Apple', id: 'post-1' },
+    new Set(['content', 'id']),
+  );
+
+  const Component = ({ postRef }: { postRef: ViewRef<'Post'> }) => {
+    const post = useView(PostView, postRef);
+    return <span>{post.content}</span>;
+  };
+
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  const render = (id: string) =>
+    act(async () => {
+      root.render(
+        <FateClient client={client}>
+          <Suspense fallback={null}>
+            <Component postRef={client.ref<Post>('Post', id, PostView)} />
+          </Suspense>
+        </FateClient>,
+      );
+    });
+
+  await render('post-1');
+  expect(container.textContent).toBe('Apple');
+
+  await render('post-2');
+  expect(container.textContent).toBe('Apple');
+
+  await act(async () => {
+    resolve([{ __typename: 'Post', content: 'Banana', id: 'post-2' }]);
+  });
+  expect(container.textContent).toBe('Banana');
+
+  await act(async () => {
+    client.write(
+      'Post',
+      { __typename: 'Post', content: 'Kiwi', id: 'post-2' },
+      new Set(['content']),
+    );
+  });
+  expect(container.textContent).toBe('Kiwi');
 });
 
 test('only updates components that match the selection', () => {

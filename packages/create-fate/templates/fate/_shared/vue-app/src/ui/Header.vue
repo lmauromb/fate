@@ -21,7 +21,9 @@ import Button from './Button.vue';
           >
             <span class="italic">fate</span>
           </span>
-          <p class="hidden text-xs text-muted-foreground sm:block">A modern data client for Vue.</p>
+          <p class="hidden text-xs text-muted-foreground sm:block">
+            A modern data client for the web.
+          </p>
         </div>
       </Link>
       <Button size="sm" variant="ghost">

@@ -45,6 +45,9 @@ const types = [
   { type: 'Comment' },
 ] as const;
 
+const createHydrationClient = () =>
+  createClient({ roots: {}, transport: { fetchById: vi.fn() }, types });
+
 const createMetadataClient = () =>
   createClient({
     roots: {},
@@ -98,6 +101,56 @@ test('hydrates normalized records and field coverage without refetching', async 
   expect(data).toMatchObject({ content: 'Content', title: 'Title' });
   expect(fetchById).not.toHaveBeenCalled();
 });
+
+test.each([true, false])(
+  'hydrates selected optional query fields omitted by JSON without refetching (configuredFields=%s)',
+  async (configuredFields) => {
+    type Page = { __typename: 'Page'; id: string; title: string; tz?: string };
+
+    const PageView = view<Page>()({ id: true, title: true, tz: true });
+    const roots = { page: clientRoot<Page, 'Page'>('Page') };
+    const types = [
+      {
+        ...(configuredFields ? { fields: { title: 'scalar', tz: 'scalar' } as const } : {}),
+        type: 'Page',
+      },
+    ] as const;
+    const record = jsonRoundTrip({
+      __typename: 'Page',
+      id: 'page-1',
+      title: 'Page',
+      tz: undefined,
+    });
+    expect(record).not.toHaveProperty('tz');
+
+    const server = createClient({
+      roots,
+      transport: { fetchById: vi.fn(), fetchQuery: vi.fn().mockResolvedValue(record) },
+      types,
+    });
+    const request = { page: { view: PageView } };
+    await server.request(request);
+
+    const fetchById = vi.fn();
+    const fetchQuery = vi.fn().mockResolvedValue(record);
+    const browser = createClient({
+      roots,
+      transport: { fetchById, fetchQuery },
+      types,
+    });
+    browser.hydrate(jsonRoundTrip(server.dehydrate()));
+
+    const { page } = await browser.request(request);
+    expect(fetchQuery).not.toHaveBeenCalled();
+    expect(fetchById).not.toHaveBeenCalled();
+    const { data } = await browser.readView<Page, SelectionOf<typeof PageView>, typeof PageView>(
+      PageView,
+      page,
+    );
+    expect(data).toMatchObject({ id: 'page-1', title: 'Page' });
+    expect(data.tz).toBeUndefined();
+  },
+);
 
 test('hydrates root queries, nullable queries, and paginated root lists', async () => {
   type User = { __typename: 'User'; id: string; name: string };
@@ -164,13 +217,7 @@ test('hydrates root queries, nullable queries, and paginated root lists', async 
 
 test('preserves existing browser fields by default and supports authoritative replacement', () => {
   const PostView = view<Post>()({ content: true, id: true, title: true });
-  const create = () =>
-    createClient({
-      roots: {},
-      transport: { fetchById: vi.fn() },
-      types,
-    });
-  const server = create();
+  const server = createHydrationClient();
   server.write(
     'Post',
     { __typename: 'Post', content: 'Server content', id: 'post-1', title: 'Server title' },
@@ -178,7 +225,7 @@ test('preserves existing browser fields by default and supports authoritative re
   );
   const state = server.dehydrate();
 
-  const browser = create();
+  const browser = createHydrationClient();
   browser.write(
     'Post',
     { __typename: 'Post', id: 'post-1', title: 'Browser title' },
@@ -341,9 +388,8 @@ test('hydrates list windows and root-list registrations used by mutation inserti
 });
 
 test('replaying replacement hydration is idempotent and only notifies durable changes', () => {
-  const create = () => createClient({ roots: {}, transport: { fetchById: vi.fn() }, types });
-  const server = create();
-  const browser = create();
+  const server = createHydrationClient();
+  const browser = createHydrationClient();
   const postId = toEntityId('Post', 'post-1');
   const listKey = getListKey(postId, 'comments');
   const recordSubscriber = vi.fn();

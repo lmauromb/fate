@@ -1,13 +1,13 @@
 # _fate_
 
-**_fate_** is a modern data client for React inspired by [Relay](https://relay.dev/) and [GraphQL](https://graphql.org/). It combines view composition, normalized caching, data masking, Async React features, and type-safe data fetching.
+**_fate_** is a modern data client for the web inspired by [Relay](https://relay.dev/) and [GraphQL](https://graphql.org/). It combines view composition, normalized caching, data masking, Async React features, and type-safe data fetching.
 
 ## Existing GraphQL Template
 
 Use this template when you want to use _fate_ with an existing GraphQL server.
 
 ```bash
-vp create fate my-app --template graphql-client
+vp create fate -- --template graphql-client
 ```
 
 ## Connect Your Server

@@ -50,7 +50,7 @@ export default function Header() {
                 <span className="italic">fate</span>
               </span>
               <p className="hidden text-xs text-muted-foreground sm:block">
-                <fbt desc="fate library tagline">A modern data client for React.</fbt>
+                <fbt desc="fate library tagline">A modern data client for the web.</fbt>
               </p>
             </div>
           </Stack>
